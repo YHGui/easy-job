@@ -4,7 +4,7 @@
 
 我们在做系统设计的时候，一个非常重要的工作就是把一个大系统做分解， 按业务功能分解成一个个低耦合、高内聚的模块，就像这样：
 
-![](http://mmbiz.qpic.cn/mmbiz/KyXfCrME6ULZa5xYnbCfBfOJSbTaBouH6HyhEOAO3QdfCXZ1HCMb4vOlch7P2yYGoOltv9LqRA4ibrH9QC5ibxUw/640?wx_fmt=png&tp=webp&wxfrom=5&wx_lazy=1)
+![Alt text](http://mmbiz.qpic.cn/mmbiz/KyXfCrME6ULZa5xYnbCfBfOJSbTaBouH6HyhEOAO3QdfCXZ1HCMb4vOlch7P2yYGoOltv9LqRA4ibrH9QC5ibxUw/640?wx_fmt=png&tp=webp&wxfrom=5&wx_lazy=1)
 
 但是分解以后就会发现有些很有趣的东西， 这些东西是通用的，或者是跨越多个模块的：
 
@@ -111,7 +111,7 @@ cmd.execute();
 注意：现在Transaction这个类和业务类在源代码层次上没有一点关系，完全隔离了。
 
 隔离是一件好事情， 但是马上给我们带来了大麻烦 。
- 
+
 Java 是一门静态的强类型语言， 代码一旦写好， 编译成java class 以后 ，可以在运行时通过反射（Reflection）来查看类的信息， 但是想对类进行修改非常困难。 
 
 而AOP要求的恰恰就是在不改变业务类的源代码（其实大部分情况下你也拿不到）的情况下， 修改业务类的方法, 进行功能的增强，就像上面给所有的业务类增加事务支持。

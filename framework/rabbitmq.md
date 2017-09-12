@@ -1,5 +1,15 @@
 ## 重要概念
 
+- 概述
+  - Erlang编写
+  - 灵活的routing
+  - multi-protocol
+  - management UI（对用户比较友好）
+  - 企业支持
+- exchange：中转站，进行routing
+  - topics，根据一定的pattern来收发消息
+  - 也能实现rpc
+
 1.
 ConnectionFactory、Connection、Channel都是RabbitMQ对外提供的API中最基本的对象。Connection是RabbitMQ的socket链接，它封装了socket协议相关部分逻辑。ConnectionFactory为Connection的制造工厂。
 Channel是我们与RabbitMQ打交道的最重要的一个接口，我们大部分的业务操作是在Channel这个接口中完成的，包括定义Queue、定义Exchange、绑定Queue与Exchange、发布消息等。
@@ -47,9 +57,16 @@ replyTo: 一个Queue名称，用于告诉服务器处理完成后将通知我的
 
 correlationId: 此次请求的标识号，服务器处理完成后需要将此属性返还，客户端将根据这个id了解哪条请求被成功执行了或执行失败
 
-- 客户端发送请求（消息）时，在消息的属性（MessageProperties，在AMQP协议中定义了14中properties，这些属性会随着消息一起发送）中设置两个值replyTo（一个Queue名称，用于告诉服务器处理完成后将通知我的消息发送到这个Queue中）和correlationId（此次请求的标识号，服务器处理完成后需要将此属性返还，客户端将根据这个id了解哪条请求被成功执行了或执行失败）
+- 客户端发送请求（消息）时，在消息的属性（MessageProperties，在AMQP协议中定义了14种properties，这些属性会随着消息一起发送）中设置两个值replyTo（一个Queue名称，用于告诉服务器处理完成后将通知我的消息发送到这个Queue中）和correlationId（此次请求的标识号，服务器处理完成后需要将此属性返还，客户端将根据这个id了解哪条请求被成功执行了或执行失败）
 
 - 服务器端收到消息并处理
 
 - 服务器端处理完消息后，将生成一条应答消息到replyTo指定的Queue，同时带上correlationId属性
-客户端之前已订阅replyTo指定的Queue，从中收到服务器的应答消息后，根据其中的correlationId属性分析哪条请求被执行了，根据执行结果进行后续业务处理
+  客户端之前已订阅replyTo指定的Queue，从中收到服务器的应答消息后，根据其中的correlationId属性分析哪条请求被执行了，根据执行结果进行后续业务处理
+
+## 消息队列
+
+- 异步通信
+  - 发送方和接收方不需要同时交互
+  - 消息放入队列中
+- 解耦系统

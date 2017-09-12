@@ -6,7 +6,7 @@
 
 ### 1.相关的接口 
 Java类中对象的序列化工作是通过ObjectOutputStream和ObjectInputStream来完成的。          
- 
+
 Java代码
 ```java
 ObjectOutputStream(OutputStream out);  
@@ -26,7 +26,7 @@ readDouble(),writeDouble()等类似的接口进行读写。
 ### 3.transient关键字 
 如果在类中的一些属性，希望在对象序列化过程中不被序列化，使用关键字transient标注修饰就可以.当对象被序列化时，标注为transient的成员属性将会自动跳过。 
 
-  
+
 ### 4.Java序列化中需要注意: 
 (1).当一个对象被序列化时，只保存对象的非静态成员变量，不能保存任何的成员方法,静态的成员变量和transient标注的成员变量。 
 (2).如果一个对象的成员变量是一个对象，那么这个对象的数据成员也会被保存还原，而且会是递归的方式。 
@@ -201,7 +201,7 @@ Course Object courseName:null credit:4
 2015 年 11月 15日
 
 
-[1]: http://www.tinymood.com   
-[2]: http://jq.qq.com/?_wv=1027&k=ZKsbKb
-[3]: http://jq.qq.com/?_wv=1027&k=Xxno3g
+[1]: http://www.tinymood.com
+[2]: http://jq.qq.com/?_wv=1027&amp;k=ZKsbKb
+[3]: http://jq.qq.com/?_wv=1027&amp;k=Xxno3g
 [4]: http://weibo.com/u/1662536394
