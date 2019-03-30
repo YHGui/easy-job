@@ -72,3 +72,5 @@
 - JVM重用
   - 背景:map和reduce task是以进程执行的,JVM数量和task数量相同,task结束JVM销毁,但是启动和销毁JVM需要资源,因此可以复用JVM来优化性能
   - set mapred.job.reuse.jvm.num.tasks=1(默认为1)
+
+### Spark 调优
