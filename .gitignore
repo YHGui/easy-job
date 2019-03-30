@@ -3,3 +3,4 @@
 *.class
 /target/*
 /Git/*.pptx
+.DS_Store
