@@ -189,3 +189,37 @@
 - Catalyst的选择
 
 ### 数据倾斜
+
+#### 数据倾斜产生的原因及现象
+
+- 对于大数据来说,数据量大并不可怕,最怕的是数据倾斜,由于数据分布不均匀,造成数据大量集中在某个点上,造成数据热点问题,一般有shuffle,比如join或者group by
+- 现象
+  - 大部分task快速完成,只有极少数task执行非常慢
+  - Sprak: UI对应job/stage/task
+  - 例行作业运行正常,突然OOM,遇到数据倾斜需要具备自适应的能力
+
+#### MapReduce中的shuffle
+
+- 在shuffle的时候,必须将相同的key拉取到同一节点进行task的处理, 比如join, group by,如果某个key数量特别大,那么必然这个key对应的数据处理必然产生数据倾斜
+
+#### Spark中的shuffle
+
+- Spark依赖:
+  - 宽依赖父RDD的partition被子RDD的某个partition使用多次,有shuffle,遇到shuffle,stage就会拆分
+  - 窄依赖:父RDD的partition至多被子RDD的某个partition使用一次
+- hash shuffle
+- sort shuffle
+- 钨丝 shuffle
+
+#### 数据倾斜的场景
+
+- group by
+  - 实现:将groupBy字段组合为map的输出的key值,利用mapreduce的排序,在reduce阶段保存LastKey区分不同的key,最后reduce阶段聚合
+- join
+- count (distinct )
+  - 单字段distinct实现:将groupBy字段和distinct字段组合成map的输出的key值,利用mapreduce的排序,同时将groupBy字段作为reduce的key,在reduce阶段保存LastKey即可完成去重
+
+#### 解决办法
+
+- join:小表和大表join,可以通过map join改善
+- key分布不均匀,解决:打散key
