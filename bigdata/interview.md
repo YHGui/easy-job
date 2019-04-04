@@ -37,6 +37,14 @@
   - 为什么要设置reduce的数量？
     - 决定文件输出的个数
     - reduce数量多，文件多，产生小文件可能性大
+      - 小文件弊端：
+        - 增加map开销，每个分片都要执行一次map任务，map操作会造成额外的开销
+        - mr处理的最佳速度就是和集群的传输速度相同，而处理小文件将增加作业的寻址次数
+        - 浪费namenode的内存
+      - 解决办法：
+        - 使用SequenceFile将这些小文件合并成一个大文件或者多个大文件：文件名为键，文件内容为值
+        - hdfs已经存在大批小文件，可以使用CombinerFileInputFormat将多个文件打包成一个文件
+        - hadoop archive，减少对namenode的负载
     - reduce数量少，运行时间长或者可能出现跑不出来情况，数据倾斜也可能出现．
     - reduce数量：min(hive.exec.reducers.max, 总输入数据量/hive.exec.reducers.bytes.per.reducer)，手动设置为：mapred.reduce.tasks，spark中对应为设置partitions数量
 - 执行计划
@@ -88,7 +96,10 @@
   - groupByKey shuffle传输的数据量大于reduceByKey
   - groupByKey:所有的数据都经过了shuffle
   - reduceByKey:先在本地做了聚合然后再进行shuffle(map side预聚合)
-- collect() 所有数据输出到driver端内存中,因此需要数据输出较少
+    - pv,uv统计
+      - 统计uv:1000w TB的数据,需要去重,如果不做优化将会在一个分区处理,因此需要做的是将数据划分到多个partition中,比如通过uid进行分区,相同uid散列到相同分区中,然后在分区中去重,再进行repartition(1)再求sum
+      - 实时计算当天uv,按date进行group by,然后在一个分区中count(distinct ),因此考虑内存中要缓存当天从零点开始到目前的所有去重字段状态,只在一个节点中,性能较差,优化策略是:也是对其进行分区,然后统计最后求sum
+- collect() 所有数据输出到driver端内存中,因此需要保证数据输出较少,否则会出现内存溢出
 - coalesce和repartition对RDD分区进行重新划分,repartition为coalesce中shuffle参数为true的实现,因此若coalesce中shuffle设置为false,那么是无法将分区数由少变多的.因此coalesce适用于多分区变少,而repartition适用于少分区变多分区
   - coalesce使用于小文件合并场景,repartition适用于数据倾斜场景,也可增加或减少RDD的并行度
 - cache VS persist
@@ -194,9 +205,14 @@
 
 - 对于大数据来说,数据量大并不可怕,最怕的是数据倾斜,由于数据分布不均匀,造成数据大量集中在某个点上,造成数据热点问题,一般有shuffle,比如join或者group by
 - 现象
-  - 大部分task快速完成,只有极少数task执行非常慢
+  - 大部分task快速完成,只有极少数task执行非常慢,执行时间长,或者等待很长时间后提示内存不足
   - Sprak: UI对应job/stage/task
   - 例行作业运行正常,突然OOM,遇到数据倾斜需要具备自适应的能力
+
+#### 倾斜度
+
+- 平均记录数超过50w且最大记录数是超过平均记录数的４倍
+- 最长时长比平均时长超过４分钟，且最大时长超过平均时长的２倍
 
 #### MapReduce中的shuffle
 
@@ -210,16 +226,25 @@
 - hash shuffle
 - sort shuffle
 - 钨丝 shuffle
+- 大数据处理:分区+散列(hash)+分区计算函数
 
 #### 数据倾斜的场景
 
 - group by
-  - 实现:将groupBy字段组合为map的输出的key值,利用mapreduce的排序,在reduce阶段保存LastKey区分不同的key,最后reduce阶段聚合
+  - group by实现:将groupBy字段组合为map的输出的key值,利用mapreduce的排序,在reduce阶段保存LastKey区分不同的key,最后reduce阶段聚合
 - join
 - count (distinct )
   - 单字段distinct实现:将groupBy字段和distinct字段组合成map的输出的key值,利用mapreduce的排序,同时将groupBy字段作为reduce的key,在reduce阶段保存LastKey即可完成去重
 
 #### 解决办法
 
-- join:小表和大表join,可以通过map join改善
+- hive.groupby.skewindata=true
+  - 生成的查询计划会有两个MR job，第一个MR job中，Map的输出结果会随机分布到Reduce中，每个Reduce做部分聚合操作；第二个MR job再根据预处理的数据按照Group By Key分布到Reduce中，最终完成聚合操作
+- Map端聚合：hive.map.aggr=true，map端部分聚合，相当于Combiner
+- join:
+  - 小表和大表join,可以通过map join(broadcast join)改善
+  - 大表和大表join:
+    - 比如日志中有一部分user_id是空或者０的情况，导致在用user_id进行hash分桶的时候，会将user_id为０或者空的数据分到一起，导致过大的倾斜度，解决办法：把空值的key变成一个字符串加上随机数，这样把倾斜的数据分到不同的reduce中，由于null值关联不上，处理后也不影响最终结果
+    - 在Spark中,只要生成RDD的时候,HashPartitioner相同,且分区数相同,就不会产生shuffle
 - key分布不均匀,解决:打散key
+  - 比如在双11时数据量特别大，group by date时发生数据倾斜，这时候可以人为的将date这个key人为的加上随机数，然后在后续再还原回来

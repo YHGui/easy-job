@@ -2,6 +2,50 @@
 
 - 基于google的mesa数据仓库,经由百度孵化的Doris(原Palo)项目
 
+### Mesa论文解读
+
+Mesa是一个分布式、多副本的、高可用的数据处理、存储和查询系统，针对结构化数据。一般数据从上游服务产生（比如一个批次的spark streaming作业产生），在内部做数据的聚合和存储，最终把数据serve到外面供用户查询。
+
+- WHAT：多数据中心，近实时，高可扩展的分析型数据仓库
+- WHY：
+  - Atomic Updates
+    - 要么全生效,要么全不生效,不存在中间状态
+  - Consistency and Correctness
+    - 强一致性必须保证,可重复读
+  - Availability
+    - 高可用,不存在单点故障,不能停服
+  - Near Real-Time Update Throughput:近实时的高吞吐更新.数据摄入时不仅支持追加新数据,也支持更新已有数据
+    - 支持增量实时更新,吞吐达到百万行/秒,增量在分钟级即可被查询到的queryability
+  - Query Performance:同事支持数百毫秒低延迟的点查询和高吞吐的批量查询
+  - Scalability:数据摄入和查询性能可以随集群规模线性增长
+  - Online Data and Metadata Transformation:在线的表Schema变更,表的Schema变更不会影响数据的摄入和查询
+- HOW
+  - 水平分区和多副本,实现storage scalability和availability
+  - 底层数据多版本管理,实现数据一致性,数据更新时不影响查询
+  - 数据batch更新,采用MVCC,每次更新会分配一个版本号,然后周期性的摄入到Mesa
+    - 存储版本问题,需要存储多份数据,聚合数据较小,问题还好
+    - 查询时延,多版本查询,需要遍历各个版本,增大查询时延
+    - merge策略:base compaction和cumulative compaction
+      - 导入数据为多个singleton delta,到一定版本数就会聚合成一个cumulative deltas,最后每天会通过base compaction将一定周期内的deltas都合并为base deltas,查询只需要查询一个base deltas,一个cumulative deltas和少数singleton deltas即可,其中compaction是后台并发和异步执行的,且key是按序存储的,merge是线性时间
+    - Mesa物理结构和索引结构
+      - 每个deltas都是immutable,需求是存储空间高效和快速查询特点key.给特定key建立索引
+      - 每个table按照大小拆分为data files,然后几百行数据会组织成一个row blocks,每个row blocks按照column进行存储
+      - 每个data files都会有对应的index file,一个索引项是<key, value>,key是row block的第一个key,value是row blocks在data files中的offset.查找特定key的过程就是:先加载index文件,二分查找index文件获取包含特定key的row blocks的offset,然后从data files中获取指定的row blocks,最后在row blocks中二分查询特定的key
+    - Mesa系统架构
+      - controller/worker框架,congtroller负责元数据缓存和worker调度器,为各种worker维护不同的调度器
+      - 各种类型worker有自己的职责,update,compaction,schema change,checksum workers
+      - controller是无状态的,controller在启动的时候会去BigTable拉取元数据,因此系统挂掉不影响查询
+      - 查询系统:
+        - global locator service用来知道目标table是由哪个query server负责
+    - Mesa多数据中心下的一致更新机制
+      - 引入committer组件,负责协调在多数据中心实例下,一次只更新一个版本
+      - 更新前,每个batch的更新分配一个version,存入version database,然后mesa的controller会监听version database的change,如果监听到change,Mesa会分配worker给update workers,接着controllers会根据work执行结果的状态信息更新version database，最终committer会检查verion提交的一致性条件是否满足（比如，一个table有多个roll up表，那么必须所有roll up表都更新后才可以提交），如果满足的话，就最终更新versions database中的version
+      - 优点:数据更新和查询都没有锁,异步更新,元数据基于Paxos协议同步更新
+    - Mesa Schema在线变更
+      - 在线变更Schema不影响数据的正常导入和查询,无需重刷历史数据
+      - Mesa提出linked schema change,对于历史数据不会重刷,新摄入的数据都按照新的schema处理,旧数据中新加列的值直接用对应数据类型的默认值填充
+  - 基于Paxos的一致性协议,保证元数据一致性
+
 ### 最佳实践
 
 #### failover和load balance
