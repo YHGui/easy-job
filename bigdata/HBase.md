@@ -66,3 +66,29 @@ HBase是一个开源的非关系型分布式数据库,参考BigTable建模,运�
 - 从Zookeeper中获取meta信息,包含HRegion Server信息,并缓存该位置信息,
 - 从HRegion Server中查询用户Table对应请求的RowKey所在的HRegion Server,并缓存该位置信息
 - 从查询到HRegionServer中读取Row
+- HBase的读取流程：
+  - 扫描顺序：BlockCache(region中blockcache)，Memstore，StoreFile
+
+### HBase寻址
+
+- 上述查询过程中第二步只缓存当前RowKey对应的HRegion的位置，因而如果下一个RowKey不在同一个HRegion中，则需要继续查询meta，随着时间推移client缓存的位置信息会越来越多，从而不需要去meta中寻找信息，除非某个HRegion宕机或者发生split情况
+- meta表存储了所有用户HRegion的位置信息
+  - table，key，region  -> region server
+
+### HBase 写入
+
+- client发起一个put请求，首先从meta表中查出该Put数据最终需要取得HRegion server，然后client将put请求发给相应的HRegion server，在HRegion server中它首先会将该Put操作写入WAL日志(Flush到磁盘)
+- Memstore是一个写缓存，每一个column family有一个自己的Memstore
+- Memstore是一个HRegion的一个Column Family对应的一个实例，排列顺序为：RowKey，Column Family，Column的顺序以及Timestamp的倒序
+
+### HBase merge
+
+- 随着写入不断增多，flush次数不断增多，Hfile文件越来越多，需要进行合并
+- Compaction会从一个region的一个store中选择一些Hfile文件进行合并，原理就是从这些待合并的数据文件中读出KeyValues，再按照由小到大排列皇后写入一个新的文件中，之后，这些新生成的文件就会取代之前待合并的所有文件对外提供服务
+- Minor Compaction：选取一些小的，相邻的store file将他们合并成一个更大的store file，在这个过程中不会处理已经delete或者expire的cell，一次minor compaction的结果是更小并且更大的store file
+- Major Compaction：是指将所有的store file合并成一个store file，这个过程还会清理三类无意义数据：被删除的数据，TTL过期数据，版本号超过设定版本号的数据，耗时较长，占用系统资源较多
+- 本质：使用段时间的IO消耗以及带宽消耗换取后续查询的低延迟
+
+### HBase 热点问题
+
+- RowKey设计(根据业务场景的where条件组合成RowKey)
