@@ -1,6 +1,6 @@
-# kafka
+# Kafka
 
-## 为什么会有kafka？
+## 为什么会有Kafka？
 
 - 数据集成 Data Integration（dirty，messy）
 - 上游每天产生海量日志数（访问日志，投票，评分）需要分析和处理
@@ -30,16 +30,26 @@
 
 ## 关键角色
 
-- Producer：向kafka发布消息的实例
-- Consumer：从kafka订阅topic是实例
-- Broker：kafka集群中每个实例称为broker，由id唯一标示，负责消息存储转发
+- Producer：向kafka发布消息的实例,比如日志消息生产者,用来写数据
+- Consumer：从kafka订阅topic的实例,消息的消费者,用来读数据
+- Broker：kafka集群中每个实例称为broker，由id唯一标示，负责消息存储转发,每一台机器叫一个Broker
+  - Broker无状态:意味着消费者必须维护已消费的状态信息offset,这些信息由消费者自己维护,Broker完全不管,Broker并不知道消费者是否已经使用了该消息,Kafka创新性的解决了这个问题,将一个简单的基于时间的SLA应用于保留策略,当消息在Broker中超过一定时间后,将会自动删除
+  - 消费者可以倒回到老的偏移量再次消息数据
+- Topic:不同消费者去指定的Topic中读,不同的生产者往不同的Topic中写
+- Partition:在Topic基础上做了进一步区分分层,由一个或多个partition组成,partition的个数决定了Topic的并发度
 - Controller：每个集群中会选举一个Broker作为controller，负责执行分区，副本分配，replica leader选举，调度数据复制和迁移
 
 ## 关键术语
 
 - Topic：kafka维护消息的种类，每一类消息由Topic标识
-- Partition：对Topic中消息水平切分，至少1partition／每个topic，partition内消息有序，多个partition消息无序
-- Consumer Group：同一个Consumer Group中的Consumers，kafka将相应的topic中的一条消息只能被一个consumer消费，用多个consumer group实现多播，一条消息被多个consumer grouop消费。一个partition只能被一个同组的consumer消费，同组的consumer则起到了负载均衡的作用，当消费者数量多于partition的数量时，多余的消费者空闲。一个consumer能消费多个partition，如果启动多个组，则会使同一个消息被消费多次。
+- Partition：对Topic中消息水平切分，至少1partition／每个topic，partition内消息有序，多个partition消息无序,每个分区代表一个并行单元
+- Message:通信的基本单位,每个producer可以向一个topic发布一些消息,心发布的消息会广播给订阅了topic的consumer
+- Offset:commit的log可以不断追加.消息在每个分区中都分配了一个叫offset的id序列来唯一识别分区中的消息;无论发布的消息是否被消费,Kafka都会持久化一定时间,在每个消费者都持久化这个offset在日志中,通常消费者读消息时会使offset值线性增长,但实际上其位置是由消费者控制,可以按任意顺序来消费消息
+- Consumer Group：同一个Consumer Group中的Consumers，Kafka将相应的topic中的一条消息只能被一个consumer消费，用多个consumer group实现多播，一条消息被多个consumer grouop消费。一个partition只能被一个同组的consumer消费，同组的consumer则起到了负载均衡的作用，当消费者数量多于partition的数量时，多余的消费者空闲。一个consumer能消费多个partition，如果启动多个组，则会使同一个消息被消费多次,避免多个消费者消费相同的分区时会导致的额外开销(需要协调那个消费者消费哪个消息,还有锁及状态的开销)
+  - Kafka中zookeeper的作用:
+    - 探测broker和consumer的添加或移除
+    - 当上述情况发生时,触发消费者进程的重新负载
+    - 维护消费关系和追踪消费者在分区消费的消息的offset
 - Replica：将partition复制，每一份叫做一个Replica。
 - Replica leader：每一个Partition都有一个leader负责partition上所有的读写操作。
 - Replica follower：每一个Partition都有0个或多个follower，只负责同步leader的数据
@@ -89,7 +99,13 @@
     - 真正消息的数据
   - 首先有一个segment list，包含所有数据处的位置，类似于索引，然后对应的才是真实的log数据
   - io 优化
+    - 持久化	
+      - Kafka存储布局简单:Topic的每个Partition对应一个逻辑日志(一个日志为相同大小的一组分段文件)
+      - 每次生产者发布消息到一个分区,broker就将消息追加到最后一个段文件中.当发布的消息数量达到设定值或者经过一定的时间后,一段文件真正flush到磁盘中
+      - 与传统消息系统不同,Kafka系统中存储的消息没有明确的消息Id
+      - 消息通过日志中的逻辑偏移量来公开
     - append only writing
+      - 无缓存设计,依赖于底层的文件系统页缓存,消息只缓存一份在页缓存中;Kafka根本不缓存消息在进程中,gc开销很小
       - disk写的时候，顺序写优化力度很大
     - zero copy
       - OS reads data from disk into pagecache in kernel space
@@ -102,6 +118,15 @@
   - Partition Leader write the message into local disk
   - Partition Follower pull from Partition Leader
   - Once Leader received ACK from partitions，it‘s written.
+  - Kafka将日志复制到指定的多个服务器上,副本的基本单元是partition,正常情况下,每个分区有一个leader和0至多个follower
+  - leader处理对应分区上所有的读写请求,分区可以多于broker数.分区可以多于broker数,leader也是分布式的
+  - follower的日志和leader的日志是相同的,follower被动的复制leader,如果leader挂了,其中一个follower会自动变成新的leader
+- 交付保证
+  - at lease once:默认是这个策略,consumer处理顺序:获得消息--处理消息--保存位置,一旦消费的client挂掉,新的client接管时处理前面客户端已处理过的消息
+  - at most once:消息可能会丢,不会重复传输
+  - exactly once:每条消息肯定会被传输一次且仅传输一次
+    - 实现:WAL保证,预写日志
+
 - 问题集锦：
   - 假设topic只有一个partition，对应只有一个consumer，如果新来一个consumer，不定义consumer group的话，他就被assign到default group中，新来的consumer会怎样做：分配关系会报错，最好显示分配。
   - kafka rabbitmq redis zeromq对比：kafka性能高，而rabbitmq适用于各种不同的协议，延展性比较好，rabbitmq用erlang，维护较难，而kafka用scala，kafka只是做数据传输，kafka信息由zookeeper管理，延展性较好。
