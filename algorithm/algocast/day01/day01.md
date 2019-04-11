@@ -98,3 +98,112 @@
        }
    }
    ```
+
+4. 对称树判断(Symmetric Tree),leetcode101
+
+   给定一棵二叉树,判断是否沿中轴线对称
+
+   ```Java
+   //递归版本
+   class Solution {
+       public boolean isSymmetric(TredNode root) {
+           //判断左右子树是否对称
+           return root == null || isSymmetricHelp(root.left, root.right);
+       }
+       
+       public boolean isSymmetricHelp(TreeNode left, TreeNode right) {
+           //左右子树有为空的一般为false
+           if (left == null || right == null) {
+               return left == right;
+           }
+           //左右子树根节点值不同,返回false
+           if (left.val != right.val) {
+               return false;
+           }
+           //判断左子树.左子树和右子树.右子树 && 左子树.右子树和右子树.左子树对称
+           return isSymmetricHelp(left.left, right.right) && isSymmetricHelp(left.right, right.left);
+       }
+   }
+   ```
+
+   ```java
+   //非递归版本
+   class Solution {
+       public boolean isSymmetric(TreeNode root) {
+           if (root == null) {
+               return true;
+           }
+           //申请辅助栈,将左右子树push到栈中
+           Stack<TreeNode> stack = new Stack<TreeNode>();
+           stack.push(root.left);
+           stack.push(root.right);
+   
+           while (!stack.isEmpty()) {
+               //pop出左右子树
+               TreeNode right = stack.pop(), left = stack.pop();
+               //左右子树均为null则continue
+               if (left == null && right == null) {
+                   continue;
+               }
+               if (left == null || right == null) {
+                   return false;
+               }
+               if (left.val != right.val) {
+                   return false;
+               }
+               stack.push(left.left);
+               stack.push(right.right);
+               stack.push(left.right);
+               stack.push(right.left);
+           }
+           return true;
+       }
+   }
+   ```
+
+5. 不用+/-求两数之和(Sum of Two Integers),leetcode 371,异或,与
+
+   
+
+   ```Java
+   //递归版本 a & b 是进位情况,a ^ b是不进位情况的相加
+   Class Solution {
+       public int getSum(int a, int b) {
+           return b == 0 ? a : getSum(a^b, (a&b)<<1)
+       }
+   }
+   ```
+
+   ```Java
+   //尾递归优化
+   Class Solution {
+       public int getSum(int a, int b) {
+           while (b != 0) {
+               int sum = a ^ b;
+               int carry = (a & b) << 1;
+               a = sum;
+               b = carry;
+           }
+           return a;
+       }
+   }
+   ```
+
+6. 单身数(Single number),leetcode 136,异或/hashset
+
+   ```Java
+   Class Solution {
+       public int singleNumber(int[] nums) {
+           Set<Integer> set = new HashSet<>();
+           int sum = 0, uniqueSum = 0;
+           for (int num : nums) {
+               if (!set.contains(num)) {
+                   uniqueSum += num;
+                   set.add(num);
+               }
+               sum += num;
+           }
+           return uniqueSum * 2 - sum;
+       }
+   }
+   ```
