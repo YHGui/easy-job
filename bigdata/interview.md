@@ -105,6 +105,11 @@
 - cache VS persist
   - 需要经常用到(训练)的数据可以cache住
   - cacge 调用persist,persist调用默认的持久化到memory
+- 窗口操作:
+  - reduceByKeyAndWindow(),比如:pairs.reduceByKeyAndWindow(_ + _, Seconds(30), Seconds(10)),其中窗口总长度需要是滑动时间间隔的整数倍
+- Streaming全局统计量
+  - updateStateByKey算子,必须设置一个checkpoint目录,开始checkpoint机制,这样的话才能把每个key对应的state除了在内存中有,也需要checkpoint一份
+  - 因为要长期保存一份key的state的话,那么Spark Streaming是要求必须用checkpoint的,以便于在内存数据丢失的时候,可以从checkpoint中恢复数据.
 
 ##### 序列化的合理选择
 
@@ -178,6 +183,22 @@
 ##### 如何基于Spark定制外部数据源
 
 - 暂无
+
+##### Spark Streaming
+
+###### Streaming on Kafka Direct
+
+1. Direct的方式直接操作Kafka底层的元数据,Kafka相当于底层的文件系统(对应receiver的executor内存)
+2. 直接读取数据,没有所谓的Receiver,直接是周期性(Batch Intervel)的查询Kafka,处理数据的时候,使用基于Kafka原生的Consumer api来获取Kafka中特定范围(offset范围)中的数据
+3. 读取多个Kafka partition, Spark也会创建RDD的partition,这个时候RDD的partition和Kafka的partition是一致的.
+4. 不需要开启WAL机制,提升效率,节省一倍磁盘空间.从Kafka获取数据,比从HDFS获取数据快,因为是zero copy的方式,速度更快.
+
+###### Direct和Receiver方式对比
+
+1. 容错角度:
+   - Receiver:失败情况下,数据可能会被处理不止一次.接收到的数据被可靠的保存到WAL中,但是还没有来得及更新Zookeeper中Kafka的偏移量,导致数据不一致:即Streaming知道数据被接收,但是Kafka认为数据还没被接收,因此戏台恢复正常后,Kafka会再一次发送这些数据,at least once
+   - Direct:给出每个batch区间需要读取的偏移量位置,每个batch的job被运行时,对应偏移量的数据从Kafka拉取,偏移量信息也被可靠的存储(checkpoint),从失败中恢复可以直接读取这些偏移量信息.exactly once
+2. Direct API消除了需要使用WAL的Receivers的情况,而且确保每个Kafka记录仅被接收一次并被高效的接收,使得Spark Streaming和Kafka很好的整合在一起,总体来说,这些特性使得流处理管道拥有高容错性,高效性,而且易使用.
 
 ##### Spark常见面试题
 
