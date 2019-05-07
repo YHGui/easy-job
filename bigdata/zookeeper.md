@@ -48,11 +48,11 @@
       - 读可以从任何一台服务器读取
       - 写操作需要写到最新的zookeeper服务器
     - zxid：64位integer id，高32位表示当前leader是谁，低32位为自动递增的标识符，znode更新后会产生新的zxid
-    - leader 选取
+    - leader选取
       - zookeeper的角色：leader，follower（跟随者），observer
       - 状态：looking，leading，following
     - state replication 
-      - zab协议
+      - zab协议:所有的事务请求都由一个主服务器也就是Leader处理,其他服务器为Follower,Leader将客户端的事务转换为Proposal,并且将Proposal分发给集群中的其他Follower,然后Leader等待Follower反馈,当有过半数(>=N/2+1)的Follower反馈信息后,Leader将再次向集群内Follower广播Commit信息,Commit为将之前的Proposal提交
         - leader
           - ping request ack revalidate
           - 收到写请求

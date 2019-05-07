@@ -67,27 +67,23 @@
 
   1. 按照所有的group by 字段和精确去重的字段进行聚合
 2. 按照所有的group by 字段进行聚合
-  
+
 ```sql
   SELECT a, COUNT(DISTINCT b, c), MIN(d), COUNT(*) FROM T GROUP BY a
 -- 1st phase grouping exprs: a, b, c
   -- 1st phase agg exprs: MIN(d), COUNT(*)
 -- 2nd phase grouping exprs: a
   -- 2nd phase agg exprs: COUNT(*), MIN(<MIN(d) from 1st phase>), SUM(<COUNT(*) from 1st phase>)
-  ```
-  
+```
+
 - _相比之下Kylin局限性在哪?_
 
-  Kylin的核心思想是预计算,利用空间换时间来加速查询模式的OLAP查询
+  1. Kylin的核心思想是预计算,利用空间换时间来加速查询模式的OLAP查询;
+2. Kylin主要满足离线固化多维分析需求,需要提前预定义维度和指标,然后查询时需要根据定义好的维度和指标进行查询,这样就无法满足即席查询的灵活多维分析需求,也没有保留明细数据,无法进行明细查询,比如任意字段聚合,不支持任意多表Join;
+  3. 不支持online schema change
+4. 部署不易,可维护性差(Doris直接部署FE和BE即可,而Kylin依赖于Hadoop生态,需要搭建Hive,Spark,HBase客户端)
+  5. 维度属性变更需要重刷历史数据,代价过大.
 
-  不支持Join
-
-  不支持online schema change
-
-  部署不易,可维护性差(Doris直接部署FE和BE即可,而Kylin依赖于Hadoop生态,需要搭建Hive,Spark,HBase客户端)
-
-  维度属性变更需要重刷历史数据,代价过大.
-  
   ![Kylin和Doris对比](https://blog.bcmeng.com/post/media/15545480639031/kylin-doris.png)
-  
+
   

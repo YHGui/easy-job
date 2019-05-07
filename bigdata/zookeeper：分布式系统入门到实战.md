@@ -56,13 +56,14 @@
 
 - 多数派写
 
-  - 每次写入都保证写入N／2个节点，每次读都保证从大于N／2个节点中读。
+  - 每次写入都保证写入大于N／2个节点，每次读都保证从大于N／2个节 点中读。
   - 问题是在处理并发问题的情况无法保证系统正确性，顺序非常重要。
 
 - Paxos
 
   - Lamport发明：Paxos的希腊城邦
   - 执行条件：没有数据丢失和错误，容忍：消息丢失，消息乱序
+  - 基于多数派读写,每个Paxos实例用来存储一个值,用两轮RPC来确定一个值,一个值"确定"后不能被修改,"确定"指被多数派接受写入,强一致性.
   - Basic Paxos
     - Client：系统外部角色，请求发起者。类比民众。
     - Proposer：接受client请求，向集群提出提议propose。并在冲突发生时，起到冲突调节的作用，类比议员，人大代表，替民众提出议案，发起Paxos的进程。
@@ -70,13 +71,21 @@
     - Learner：提议接收者，backup，备份，对集群一致性没什么影响。类比记录员。
     - 步骤、阶段
       1. Phase 1a：Prepare
-         - proposer提出一个提案，编号为N，此N大于这个proposer之前提出提案编号。请求acceptors的Quorum接受
+         - proposer提出一个提案，编号为rnd，此rnd大于这个proposer之前提出提案编号。请求acceptors的Quorum接受
       2. Phase 1b：Promise
          - 如果N大于acceptor之前接受的任何提案编号则接受，否则拒绝。
+         - Proposer收到Acceptor发回的应答:
+           - 如果应答中的last_rnd大于发出的rnd:退出
+           - 从所有的应答中选择vrnd最大的v
+           - 如果所有应答的v都是空,可以选择自己要写入v
+           - 如果应答不够多数派,退出
       3. Phase 2a：Accept
          - 如果达到了多数派，是否达到多数派是由proposer来决定的，proposer会发出accept请求，此请求包含提案编号N，以及提案内容。
       4. Phase 2b：Accepted
-         - 如果此acceptor在此期间没有收到任何编号大于N的提案，则接受此提案内容，否则忽略。
+         - 如果此acceptor在此期间没有收到任何编号大于rnd的提案，则接受此提案内容，否则忽略。
+         - 拒绝rnd不等于Acceptor的last_rnd的请求
+         - 将请求中的v写入本地,记v为'已接受的值'
+         - last_rnd==rnd保证没有其他Proposer在此过程中写入其他值
     - client发出request，proposer就提出一个提案，prepare(1)，然后acceptors来根据多数派接受这个提案，promise(1, {va, vb, vc})，如果达到多数派，proposer会发出accept请求，请求包括提案编号以及提案内容，如果此acceptor在此期间没有收到任何编号大于N的提案，则接受此提案内容，否则忽略。
     - 除proposer外的其他accpetor节点失败，基本上不会影响，只要保证quorum即可，如果proposer节点失败，则propose无效，重新选取leader proposer进行propose，之前的操作没有完成，没有被accept。
     - 潜在问题：活锁，两个proposer循环向集群acceptor提出提议。解决办法：类似网络中解决冲突的办法：随机等待时间消除冲突。
@@ -84,6 +93,7 @@
     - 这里可以将client看成是客户端，proposer是一个服务请求的转发者，acceptor是数据节点，proposer收到客户端写数据的日志请求之后，首先开始对多个acceptor发起这个请求的讨论，然后经过多数派同意，且讨论的请求编号没有超过当前请求编号的，接受，proposer经过判断，满足多数派，发出请求的提案编号以及提案内容，如果acceptor在此期间还没收到编号更大的提案，就接受此提案内容，然后会发送给learner，learner也会接受。
   - Multi Paxos
     - Leader：唯一的proposer，所有的请求都经过这个leader proposer。
+      - 将多个Paxos实例的phase-1合并到一个RPC,使得这些paxos只需要运行phase-2即可
       - 首先第一轮RPC是竞选总统的过程，就是prepare(n)，然后所有的acceptor表示同意是第I任总统，promis(n, I, {va, vb, vc})，总统选好了之后只有一个proposer
     - 一轮RPC：accept(N, I, Vm)和accepted(N, I, Vm)这个阶段就够了
     - 下一次又来一个请求，并不需要再竞选总统，还处在任期之内，后续只有一轮RPC
@@ -104,4 +114,4 @@
     - follower
     - candidate（leader失败了，竞选的临时状态，竞选者）
 
-  ​
+  
