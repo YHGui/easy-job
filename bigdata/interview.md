@@ -49,17 +49,20 @@
     - reduce数量：min(hive.exec.reducers.max, 总输入数据量/hive.exec.reducers.bytes.per.reducer)，手动设置为：mapred.reduce.tasks，spark中对应为设置partitions数量
 - 执行计划
   - explain extended "query"
+  
   - 普通join(shuffle join)实现：
-    - Mapper读取a表，Mapper读取b表
-    - 数据结构：(a.id, a,...) (b.id, b,...)
-    - 在shuffle阶段把相同的key分发到相同的reducer上
-    - 在reducer上完成真正的join操作
+    - 在map的输出value中为不同表的数据打上tag标记,在reduce阶段根据tag判断数据来源
+  
+    ![deploy](https://awps-assets.meituan.net/mit-x/blog-images-bundle-2014/73cd82b9.png)
+  
   - map join(broadcast join, 并没有shuffle的过程)实现原理
     - set hive.auto.convert.join = true; 或者手动加上**/\*+mapjoin(表名)\*/**
-    - 首先在本地生成一个local task,读取小表中的数据，然后将表写入hash table file，上传到HDFS缓存，然后启动一个map作业，每读取一条数据，就与缓存中的小表进行join操作，直至整个大表读取结束
-    - 小表加载到缓存中
-    - Mapper读取大表中的数据
-    - 大表的数据和缓存中的小表数据进行对比，获取join上的结果
+  
+    1. 通过MapReduce Local Task,将小表读入内存，生成HashTableFile上传到Distributed Cache，这里会对HashTableFile进行压缩
+    2. MapReduce Job在Map阶段,每个Mapper从Distributed Cache读取HashTableFiles到内存中,顺序扫描达标,在Map阶段直接进行Join,将数据传递给下一个MapReduce任务
+  
+    ![deploy](https://awps-assets.meituan.net/mit-x/blog-images-bundle-2014/a4cd80c9.png)
+  
     - 优点：
       - 不消耗集群的reduce资源
       - 减少reduce操作，加快程序执行
@@ -253,10 +256,8 @@
 #### 数据倾斜的场景
 
 - group by
-  - group by实现:将groupBy字段组合为map的输出的key值,利用mapreduce的排序,在reduce阶段保存LastKey区分不同的key,最后reduce阶段聚合
 - join
 - count (distinct )
-  - 单字段distinct实现:将groupBy字段和distinct字段组合成map的输出的key值,利用mapreduce的排序,同时将groupBy字段作为reduce的key,在reduce阶段保存LastKey即可完成去重
 
 #### 解决办法
 
