@@ -49,10 +49,8 @@ class Solution {
 
    给定数组和目标数,求数组中两数之和为目标数的下标
 
-   
-
    ```Java
-   class Solution {
+class Solution {
        public int[] twoSum(int[] nums, int target) {
            //用一个HashMap做辅助
            Map<Integer, Integer> map = new HashMap<Integer, Integer>();
@@ -71,7 +69,7 @@ class Solution {
    }
    //时间复杂度为O(n), 空间复杂度为O(n)----HashMap辅助的
    ```
-
+   
 3. 有序数组两数之和(two sum II),leetcode 167, two pointers
 
    给定有序数组和目标数,求数组中两数之和为目标数的下标
@@ -161,19 +159,17 @@ class Solution {
 
 5. 不用+/-求两数之和(Sum of Two Integers),leetcode 371,异或,与
 
-   
-
    ```Java
-   //递归版本 a & b 是进位情况,a ^ b是不进位情况的相加
+//递归版本 a & b 是进位情况,a ^ b是不进位情况的相加
    Class Solution {
        public int getSum(int a, int b) {
            return b == 0 ? a : getSum(a^b, (a&b)<<1)
        }
    }
    ```
-
+   
    ```Java
-   //尾递归优化
+//尾递归优化
    Class Solution {
        public int getSum(int a, int b) {
            while (b != 0) {
@@ -186,7 +182,7 @@ class Solution {
        }
    }
    ```
-
+   
 6. 单身数(Single number),leetcode 136,异或/hashset
 
    ```Java
@@ -372,3 +368,70 @@ class Node {
 }
 ```
 
+9. 丑数 leetcode 264, lintcode 4
+
+```java
+class Solution {
+    public int nthUglyNumber(int n) {
+        List<Integer> uglys = new ArrayList<Integer>();
+        uglys.add(1);
+        int p2 = 0, p3 = 0, p5 = 0;
+        for (int i = 1; i < n; i++) {
+            int lastNum = uglys.get(i - 1);
+            while (uglys.get(p2) * 2 <= lastNum) p2++;
+            while (uglys.get(p3) * 3 <= lastNum) p3++;
+            while (uglys.get(p5) * 5 <= lastNum) p5++;
+
+            uglys.add(Math.min(Math.min(uglys.get(p2) * 2, uglys.get(p3) * 3), uglys.get(p5) * 5));
+        }
+        
+        return uglys.get(n - 1);
+    }
+}
+```
+
+10. Quick Select思路解决求第K大的数
+
+```java
+class Solution {
+    public int kthLargestElement(int k, int[] nums) {
+        if (nums == null || nums.length == 0) {
+            return -1;
+        }
+        return quickSelect(nums, 0, nums.length - 1; k);
+    }
+    
+    private int quickSelect(int[] nums, int start, int end, int k) {
+        if (start == end) {
+            return nums[start];
+        }
+        
+        int left = start;
+        int right = end;
+        int pivot = nums[(left + right) / 2];
+        while (left <= right) {
+            while (left <= right && nums[left] > pivot) {
+                left++;
+            }
+            while (left <= right && nums[right] < pivot) {
+                right--;
+            }
+            if (left <= right) {
+                int temp = nums[left];
+                nums[left] = nums[right];
+                nums[right] = temp;
+                left++;
+                right--;
+            }
+        }
+        if (start + k - 1 <= right) {
+            return quickSelect(nums, start, right, k);
+        }
+        if (start + k - 1 >= left) {
+            return quickSelect(nums, left, end, k - (left - start));
+        }
+        
+        return nums[right + 1];
+    }
+}
+```
