@@ -24,7 +24,47 @@ HBase是一个开源的非关系型分布式数据库,参考BigTable建模,运�
 
 ### SSTable
 
-SSTable是Bigtable内部用于数据的文件格式,文件本身就是一个排序的,不可变的,持久的Key/Value对,其中Key和value都可以是任意的byte字符串。使用Key来查找Value，或通过给定Key范围遍历所有的Key/Value对
+**定义**:SSTable是Bigtable内部用于数据的文件格式,文件本身就是一个**排序**的,**不可变**的,**持久**的```Key/Value```对,其中```Key```和```value```都可以是任意的```byte```字符串。
+
+使用Key来查找Value，或通过给定Key范围遍历所有的```Key/Value```对.每个```SSTable```包含一系列的```Block```(一般```Block```大小为64KB,但是它是可配置的),在```SSTable```的末尾是```Block```索引,用于定位```Block```,这些索引在```SSTable```打开时被加载到内存中,在查找时首先从内存中的索引二分查找找到```Block```,然后一次磁盘寻道即可读取到相应的Block.还有一种方案是将这个```SSTable```加载到内存中,从而在查找和扫描中不需要读取磁盘.
+
+![deploy](../images/HFile.jpg)
+
+在HBase使用过程中,对这个版本的HFile遇到以下一些问题:
+
+1. 解析时内存使用量比较高;
+2. BloomFilter和Block索引很大,影响启动性能.具体的,Bloom Filter可以增长到100MB每个HFile,而Block索引可以增长到300MB,如果一个HRegionServer中有20个HRegion,则他们分别能增长到2GB和6GB的大小.
+3. HRegion需要在打开时,需要加载所有的Block索引到内存中,因而影响启动性能;而在第一次Request时,需要将整个Bloom Filter加载到内存中,再开始查找,因而Bloom Filter太大会影响第一次请求的延迟.
+
+**存储**:
+
+1. 在新数据写入时,这个操作首先提交到日志中作为redo记录,最近的数据存储在内存的memtable中;旧的数据存储在一系列的SSTable中.在recover中,Tablet server从metadata表中读取metadata,metadata包含了组成Tablet的所有SSTable(记录了这些SSTable的元数据信息,如SSTable的位置,StartKey,EndKey等)以及一系列日志中的redo点.Tablet Server读取SSTable的索引到内存,并replay这些redo点之后的更新来重构memtable;
+2. 在读时,完成格式,授权更检查后,读会同时读取SSTable,memtable(HBase还包含BlockCache中的数据),由于SSTable和memtable都是字典序排序,因而合并操作可以很高效的完成;
+
+**Compaction**:
+
+1. memtable大小增加到一个阈值,这个memtable会被冻结然后创建一个新的memtable以供使用,旧的memtable会转换成一个SSTable而写到GFS,这个过程叫做minor compaction,minor compaction的作用是:减少内存使用量,减少日志大小,因为持久化后的数据可以从日志中删除.在minor compaction过程中,可以继续处理写请求
+2. 每次minor compaction会生成新的SSTable,如果SSTable文件数量增加,会影响读性能,因而每次读都需要读取所有SSTable文件,然后合并结果,因而对SSTable文件个数需要有上限,并且是不是需要在后台做merging compaction,这个merging compaction读取一些SSTable文件和memtable的内容,并将它们合并写入一个新的SSTable中,当这个过程完成后,这些源SSTable和memtable就可以被删除了
+3. 如果一个merging compaction是合并所有SSTable到一个SSTable,则这个过程称做major compaction.一次major compaction会将mark成delete的数据删除,其他compaction则会保留这些信息和数据.Bigtable会时不时扫描所有的Tablet,并对它们做major compaction.这个major compaction可以将需要删除的数据真正的删除从而节省空间,并保持系统一致性.
+
+**压缩**
+
+Bigtable的压缩是以SSTable中的一个Block为单位的,虽然每个Block为压缩单位损失一些空间,但是采用这种方式,我们可以以Block为单位读取,解压,分析,而不是每次以一个大的SSTable为单位读取,解压,分析
+
+**缓存**
+
+1. 缓存从SSTabel读取的Key/Value对.提升重复读取相同数据性能
+2. BlockCache,缓存SSTable中的Block,提升读取相近数据的性能
+
+**BloomFilter**
+
+借助BloomFilter,快速找到一个RowKey不在某个SSTable中的事实
+
+**Immutable好处**
+
+1. 在读SSTable是不需要同步的.读写同步只需要在memtable中处理,为了减少memtable的读写竞争,Bigtable将memtable的row设计成copy-on-write,从而读写可以同时进行;
+2. 永久的移除数据转变为SSTable的Grabage Collect.每个Tablet中的SSTable在metadata表中有注册,master使用mark-and-sweep算法将SSTable在GC过程中移除
+3. 可以让Tablet Split过程变得高效,我们不需要为每个子Tablet创建新的SSTable,而是可以共享父Tablet的SSTable.
 
 ### 物理模型
 
