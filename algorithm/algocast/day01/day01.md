@@ -4,10 +4,8 @@
 
    给定一个字符串,判断是否是回文字符串,字符串只考虑字母和数字,忽略字母大小写
 
-   
-
    ```java
-   class Solution {
+class Solution {
        public boolean isPalindrome(String s) {
            if (s == null || s.length() == 0) {
                return true;
@@ -46,7 +44,7 @@
    }
    //时间复杂度为O(n), 空间复杂度为O(1)
    ```
-
+   
 1. 两数之和(two sum),leetcode 1, HashMap
 
    给定数组和目标数,求数组中两数之和为目标数的下标
@@ -207,4 +205,170 @@
        }
    }
    ```
+
+7. 数据流中的中位数
+
+思路: 用两个容器来分别存数据流序列中位数左右两边的数,只要保证左边容器的数都大于右边容器的数,且能在O(1)的时间分别取到左边容器的最小值和右边容器的最大值,因此分别借助小顶堆和大顶堆来存储数据,同时还需要保证左右容器相差不大于1,可以约定规则:偶数下标进入大顶堆.
+
+```java
+import java.util.Comparator;
+import java.util.PriorityQueue;
+import java.util.Queue;
+
+public class FindMedianNum {
+    private int count = 0;
+    private Queue<Integer> minHeap = new PriorityQueue<Integer>();
+    private Queue<Integer> maxHeap = new PriorityQueue<Integer>(15, new Comparator<Integer>() {
+        public int compare(Integer o1, Integer o2) {
+            return o2 - o1;
+        }
+    });
+
+    public void insert(Integer num) {
+        if (count % 2 == 0) {
+            // 当数据总数为偶数时,新加入的元素,应当加入小顶堆;但并不是直接进入小顶堆,而是经大顶堆筛选后取大顶堆最大元素进入小顶堆.
+            // 1. 新加入的元素进入小顶堆,由大顶堆筛选出堆中最大元素
+            maxHeap.offer(num);
+            int maxNum = maxHeap.poll();
+            // 2. 筛选后,即大顶堆中最大元素进入小顶堆
+            minHeap.offer(maxNum);
+        } else {
+            // 当数据总数为奇数时,新加入的元素应该进入大顶堆;但并不是直接进入大顶堆,而是经小顶堆筛选后取小顶堆最小元素进入大顶堆.
+            // 1. 新加入的元素进入小顶堆,由小顶堆筛选出堆中最小元素
+            minHeap.offer(num);
+            int minNum = minHeap.poll();
+            // 2. 筛选后,即小顶堆中最小元素进入大顶堆
+            maxHeap.offer(minNum);
+        }
+        count++;
+    }
+
+    public Double getMedian() {
+        //分情况获取中位数
+        if (count % 2 == 0) {
+            return new Double((minHeap.peek() + maxHeap.peek()) * 1.0 / 2);
+        } else {
+            return new Double(minHeap.peek());
+        }
+    }
+}
+```
+
+8. 一个链表奇数位上升序，偶数位上降序，不用额外空间让这个链表整体升序
+
+比如: 1->8->3->6->5->4->7->2->9, 解题思路:1. 根据奇数位和偶数位拆分成两个链表;2. 将偶数位链表反转;3.将两个有序链表进行合并;
+
+```java
+public class SortedLinkedList {
+    //1. 根据奇数位和偶数位拆分成两个链表
+    private static Node[] divideList(Node head) {
+        Node head1 = new Node(0);
+        Node head2 = new Node(0);
+        Node cur1 = head1;
+        Node cur2 = head2;
+        int cnt = 1;
+        while (head != null) {
+            if (cnt % 2 != 0) {
+                cur1.next = head;
+                cur1 = cur1.next;
+            } else {
+                cur2.next = head;
+                cur2 = cur2.next;
+            }
+            head = head.next;
+            cnt++;
+        }
+        cur1.next = null;
+        cur2.next = null;
+        return new Node[] {head1.next, head2.next};
+    }
+
+    //2. 将偶数位链表反转
+    private static Node reverse(Node head) {
+        if (head == null || head.next == null) {
+            return head;
+        }
+
+        Node prev = null;
+        while (head != null) {
+            Node temp = head.next;
+            head.next = prev;
+            prev = head;
+            head = temp;
+        }
+
+        return prev;
+    }
+
+    //3. 将两个有序链表进行合并
+    private static Node combine(Node head1, Node head2) {
+        if (head1 == null || head2 == null) {
+            return head1 != null ? head1 : head2;
+        }
+
+        Node head = new Node(0);
+        Node curt = head;
+        while (head1 != null && head2 != null) {
+            if (head1.value >= head2.value) {
+                curt.next = head2;
+                head2 = head2.next;
+            } else {
+                curt.next = head1;
+                head1 = head1.next;
+            }
+            curt = curt.next;
+        }
+
+        if (head1 != null) {
+            curt.next = head1;
+        }
+
+        if (head2 != null) {
+            curt.next = head2;
+        }
+        return head.next;
+    }
+
+    public static void main(String[] args) {
+        Node node1 = new Node(1);
+        Node node2 = new Node(8);
+        Node node3 = new Node(3);
+        Node node4 = new Node(6);
+        Node node5 = new Node(5);
+        Node node6 = new Node(4);
+        Node node7 = new Node(7);
+        Node node8 = new Node(2);
+        Node node9 = new Node(9);
+
+        node1.next = node2;
+        node2.next = node3;
+        node3.next = node4;
+        node4.next = node5;
+        node5.next = node6;
+        node6.next = node7;
+        node7.next = node8;
+        node8.next = node9;
+        Node head = node1;
+
+        Node[] lists = divideList(head);
+        Node head1 = lists[0];
+        Node head2 = lists[1];
+        head2 = reverse(head2);
+        head = combine(head1, head2);
+        while (head != null) {
+            System.out.println(head.value);
+            head = head.next;
+        }
+    }
+}
+
+class Node {
+    public int value;
+    public Node next;
+
+    Node(int value) {
+        this.value = value;
+    }
+}
+```
 
