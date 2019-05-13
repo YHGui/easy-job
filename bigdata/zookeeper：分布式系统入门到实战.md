@@ -80,7 +80,7 @@
            - 如果所有应答的v都是空,可以选择自己要写入v
            - 如果应答不够多数派,退出
       3. Phase 2a：Accept
-         - 如果达到了多数派，是否达到多数派是由proposer来决定的，proposer会发出accept请求，此请求包含提案编号N，以及提案内容。
+         - 如果达到了多数派，是否达到多数派是由proposer来决定的，proposer会发出accept请求，此请求包含提案编号rnd，以及提案内容。
       4. Phase 2b：Accepted
          - 如果此acceptor在此期间没有收到任何编号大于rnd的提案，则接受此提案内容，否则忽略。
          - 拒绝rnd不等于Acceptor的last_rnd的请求

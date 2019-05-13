@@ -22,6 +22,10 @@ HBase是一个开源的非关系型分布式数据库,参考BigTable建模,运�
 - value:Byte array
 - timestamp时间戳用于区分失效时间
 
+### SSTable
+
+SSTable是Bigtable内部用于数据的文件格式,文件本身就是一个排序的,不可变的,持久的Key/Value对,其中Key和value都可以是任意的byte字符串。使用Key来查找Value，或通过给定Key范围遍历所有的Key/Value对
+
 ### 物理模型
 
 - HBase一张表由一个或多个Hregion组成,HRegion是HBase中分布式存储和负载均衡的最小单元
@@ -32,11 +36,14 @@ HBase是一个开源的非关系型分布式数据库,参考BigTable建模,运�
   
 - 记录之间按照RowKey的字典序排列
 
-- HRegion按大小分割,每个表一开始只有一个Hregion,随着数据不断插入表,Hregion不断增大,当增大到一定阈值的时候,Hregion就会等分成两个新的Hregion,当table中的行不断增多,就会有越来越多的Hregion
+- HRegion按大小分割,每个表一开始只有一个Hregion,随着数据不断插入表,Hregion不断增大,当增大到一定阈值(由```hbase.hregion.max.filesize```指定,默认是10GB)的时候,Hregion就会等分成两个新的Hregion,新的HRegion会在同一个HRegionServer中创建,各自包含父HRegion一半的数据,当Split完成后,父HRegion会下线,新的子HRegion会向HMaster注册上线,出于负载均衡考虑,这两个新的HRegion可能会被HMaster分配到其他的HRegionServer中;当table中的行不断增多,就会有越来越多的Hregion
 
 ![deploy](../images/HRegion分割.png)
 
 - 为了增加吞吐量,不同的region放在不同的机器上面
+
+![deploy](../images/HBaseArchitecture-HRegion-Split.png)
+
 - 表->HTable
 - 按RowKey范围分的region->HRegion->Region Servers
 - HRegion按列族->多个HStore
@@ -79,8 +86,12 @@ HBase是一个开源的非关系型分布式数据库,参考BigTable建模,运�
   - 无Master过程中,数据读取仍照常进行
   - 无Master过程中,region切分,负载均衡等无法进行
 - Region Server容错
-  - 定时向Zookeeper汇报心跳,如果一段时间内未出现心跳,Master将该RegionServer上的Region重新分配到其他Region Server上,失效服务器上"预写"日志由主服务器进行分割并派送给新的RegionServer
+  
+  - 定时向Zookeeper汇报心跳,如果一段时间内未出现心跳,Master将该RegionServer上的Region重新分配到其他Region Server上,失效服务器上"预写WAL"日志由主服务器进行分割并派送给新的RegionServer,从而这些HRegionServer可以Replay分到的WAL来重建MemStore
+  
+  ![deploy](../images/HBaseArchitecture-HRegionServer-Recovery.png)
 - Zookeeper容错
+  
   - Zookeeper是一个可靠的服务,一般配置3或5个Zookeeper实例
 - WAL(Write-Ahead-Log)预写日志
   - 是HBase的RegionServer在处理数据插入和删除的过程中用来记录操作内容的一种日志
@@ -111,7 +122,8 @@ HBase是一个开源的非关系型分布式数据库,参考BigTable建模,运�
 
 - HBase的读取流程：
   
-  - 扫描顺序：BlockCache(region中blockcache)，Memstore，StoreFile
+  - 扫描顺序：BlockCache(region中blockcache)，Memstore，StoreFile(HFile)
+  - 其中StoreFile的扫描会先使用Bloom Filter过滤那些不可能符合条件的HFile,然后使用Block Index快速定位Cell,并将其加载到BlockCache中,然后从BlockCache中读取,我们知道一个HStore可能存在多个StoreFile(HFile),此时需要扫描多个HFile,如果HFile过多又会引起性能问题.
   
   ![deploy](../images/HBase查询顺序.png)
 
@@ -145,7 +157,13 @@ HBase是一个开源的非关系型分布式数据库,参考BigTable建模,运�
 - 随着写入不断增多，flush次数不断增多，Hfile文件越来越多，需要进行合并
 - Compaction会从一个region的一个store中选择一些Hfile文件进行合并，原理就是从这些待合并的数据文件中读出KeyValues，再按照由小到大排列后写入一个新的文件中，之后，这些新生成的文件就会取代之前待合并的所有文件对外提供服务
 - **Minor Compaction**：选取一些小的，相邻的store file将他们合并成一个更大的store file，在这个过程中不会处理已经delete或者expire的cell，一次minor compaction的结果是更小并且更大的store file
-- **Major Compaction**：是指将所有的store file合并成一个store file，这个过程还会清理三类无意义数据：被删除的数据，TTL过期数据，版本号超过设定版本号的数.Major Compaction耗时较长，占用系统资源较多
+
+![deploy](../images/HBaseArchitecture-Minor-Compaction.png)
+
+- **Major Compaction**：是指将所有的Store file合并成一个store file，这个过程还会清理三类无意义数据：被删除的数据，TTL过期数据，版本号超过设定版本号的数.Major Compaction耗时较长，占用系统资源较多,因此一般安排在周末,凌晨等集群比较闲的时候
+
+![deploy](../images/HBaseArchitecture-Major-Compaction.png)
+
 - 本质：使用短时间的IO消耗以及带宽消耗换取后续查询的低延迟,compact的速度远远跟不上HFile生成的速度,因此在HFile数量过多的时候会限制写请求的速度.
 
 ### HBase 热点问题
