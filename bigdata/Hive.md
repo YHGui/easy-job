@@ -63,7 +63,7 @@
 
 ![deploy](../images/论文中mapreduce过程.png)
 
-shuffle横跨map输出到reduce输入这一过程,大部分情况map task和reduce task的执行是分布在不同的节点上的,因此很多情况下,reduce节点需要需要跨节点去拉取其他节点的map task的结果,磁盘I/O对性能影响很大,同时网络资源消费非常大,因此希望shuffle过程满足:
+shuffle横跨map输出到reduce输入这一过程,大部分情况map task和reduce task的执行是分布在不同的节点上的,因此很多情况下,reduce节点需要跨节点去拉取其他节点的map task的结果,磁盘I/O对性能影响很大,同时网络资源消费非常大,因此希望shuffle过程满足:
 
 1. 完整从Map task端拉取数据到Reduce端;
 2. 在跨节点拉取数据时,尽量减少对带宽不必要的消耗;
@@ -154,6 +154,13 @@ Reduce过程经典流程图如下:
 ##### Reducer的输入文件
 
 - merge最后生成一个文件,大多情况存在于磁盘中,但需要将其放入内存中.当reducer输入文件已定,shuffle才算结束.然后Reducer执行,把结果放到HDFS上.
+
+#### MR为什么要进行排序?
+
+- 发生sort两个地方:
+  1. map端发生在spill后partition前
+  2. reduce端copy后reduce前
+- reduce阶段需要分组,将key相同的放在一起进行规约,有两种算法:hashmap和sort,前者太耗内存,而排序通过外排可对任意数据量分组,只要磁盘足够大就行,map端排序是为了减轻reduce端排序的压力,在Spark中除了sort的方法也提供hashmap,用户可配置,毕竟sort开销太大
 
 ### Hive优化
 
