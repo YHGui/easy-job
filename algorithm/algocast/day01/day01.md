@@ -461,7 +461,7 @@ class Solution {
 }
 ```
 
-12. 给出一个数组代表围柱的高度，求能围柱的最大的水量
+12. 给出一个数组代表围柱的高度，求能围住的最大的水量
 
 ```java
 class Solution {
@@ -489,3 +489,264 @@ class Solution {
     }
 }
 ```
+
+13. 给一个整数n,计算出1~n这n个数字可以构成多少棵不同的二叉搜索树
+
+```java
+class solution {
+    public int numTrees(int n) {
+        //n小于0,直接返回0
+        if (n < 0) {
+            return 0;
+        }
+        //开辟count数组,长度为n+2,至少包含前两个数count[0], count[1]
+        int[] count = new int[n + 2];
+        count[0] = 1;
+        count[1] = 1;
+        for (int i = 2; i <= n; i++) {
+            for (int j = 0; j < i; j++) {
+                //root分别第0,1,2,..i-1个数时,左子树有0,1,2,..i-1个递增数,右子树有i-j-1个,分别求得左右二叉搜素树数目相乘最后求和
+                count[i] += count[j] * count[i - j - 1];
+            }
+        }
+        return count[n];
+    }
+}
+```
+
+14. 直方图最大矩形面积:给出的n个非负整数表示每个直方图的高度，每个直方图的宽均为1，在直方图中找到最大的矩形面积
+
+```java
+class Solution {
+    /**
+     * @param height: A list of integer
+     * @return: The area of largest rectangle in the histogram
+     */
+    public int largestRectangleArea(int[] height) {
+        // write your code here
+        if (height == null || height.length == 0) {
+            return 0;
+        }
+        int len = height.length;
+        int max = 0;
+        //分别找到左右边界,但是会超时T:O(n*n), S:O(1)
+        // for (int i = 0; i < len; i++) {
+        //     int left = i;
+        //     int right = i;
+        //     while (left >= 0 && height[left] >= height[i]) {
+        //         left--;
+        //     }
+        //     while (right < len && height[right] >= height[i]) {
+        //         right++;
+        //     }
+        //     max = Math.max(max, (right - left - 1) * height[i]);
+        // }
+        //借助辅助栈T:O(n), S:O(n)
+        Stack<Integer> stack = new Stack<Integer>();
+        for (int right = 0; right <= len; right++) {
+            int h = right == len ? 0 : height[right];
+            while (!stack.empty() && h < height[stack.peek()]) {
+                int idx = stack.pop();
+                int left = stack.empty() ? -1 : stack.peek();
+                max = Math.max(max, height[idx] * (right - left - 1));
+            }
+            stack.push(right);
+        }
+        return max;
+    }
+}
+```
+
+15. 给你一个二维矩阵，权值为`False`和`True`，找到一个最大的矩形，使得里面的值全部为`True`，输出它的面积
+
+```java
+class Solution {
+    //思路:将该矩形转变为直方图,然后转变为求直方图最大矩形面积
+    /**
+     * @param matrix: a boolean 2D matrix
+     * @return: an integer
+     */
+    public int maximalRectangle(boolean[][] matrix) {
+        // write your code here
+        if (matrix == null || matrix.length == 0
+            || matrix[0] == null || matrix[0].length == 0) {
+            return 0;
+        }
+        int row = matrix.length;
+        int col = matrix[0].length;
+        int[] heights = new int[col];
+        int max = 0;
+        for (int i = 0; i < row; i++) {
+            for (int j = 0; j < col; j++) {
+                //只要有false,直方图高度就为0,否则高度加1
+                heights[j] = matrix[i][j] ? heights[j] + 1 : 0;
+            }
+            max = Math.max(max, largestRectangleArea(heights));
+        }
+        return max;
+    }
+}
+```
+
+16. 在一个二维01矩阵中找到全为1的最大正方形, 返回它的面积.
+
+```java
+class Solution {
+    /**
+     * @param matrix: a matrix of 0 and 1
+     * @return: an integer
+     */
+    public int maxSquare(int[][] matrix) {
+        // write your code here
+        if (matrix == null || matrix.length == 0
+            || matrix[0] == null || matrix[0].length == 0) {
+            return 0;
+        }
+        int row = matrix.length;
+        int col = matrix[0].length;
+        int[] heights = new int[col];
+        int max = 0;
+        for (int i = 0; i < row; i++) {
+            for (int j = 0; j < col; j++) {
+                //只要有1,直方图高度就加1,否则赋值为0
+                heights[j] = matrix[i][j] == 1 ? heights[j] + 1 : 0;
+            }
+            max = Math.max(max, largestSquareArea(heights));
+        }
+        return max;
+    }
+    
+    private int largestSquareArea(int[] height) {
+        // write your code here
+        if (height == null || height.length == 0) {
+            return 0;
+        }
+        int len = height.length;
+        int max = 0;
+        //分别找到左右边界,但是会超时T:O(n*n), S:O(1)
+        // for (int i = 0; i < len; i++) {
+        //     int left = i;
+        //     int right = i;
+        //     while (left >= 0 && height[left] >= height[i]) {
+        //         left--;
+        //     }
+        //     while (right < len && height[right] >= height[i]) {
+        //         right++;
+        //     }
+        //     max = Math.max(max, (right - left - 1) * height[i]);
+        // }
+        //借助辅助栈T:O(n), S:O(n)
+        Stack<Integer> stack = new Stack<Integer>();
+        for (int right = 0; right <= len; right++) {
+            int h = right == len ? 0 : height[right];
+            while (!stack.empty() && h < height[stack.peek()]) {
+                int idx = stack.pop();
+                int left = stack.empty() ? -1 : stack.peek();
+                int axis = Math.min(height[idx], (right - left -1));
+                max = Math.max(max, axis * axis);
+            }
+            stack.push(right);
+        }
+        return max;
+    }
+}
+```
+
+17. 给你一个大小为n的整型数组和一个大小为k的滑动窗口，将滑动窗口从头移到尾，输出从开始到结束每一个时刻滑动窗口内的数的和(window sum)
+
+    ```java
+    class Solution {
+        public int[] winSum(int[] nums, int k) {
+            if (nums == null || nums.length < k || k <= 0) {
+                return new int[0];
+            }
+            
+            int[] sum = new int[nums.length - k + 1];
+            for (int i = 0; i < k; i++) {
+                sum[0] += nums[i];
+            }
+            
+            for (int i = 1; i + k <= nums.length ; i++) {
+                sum[i] = sum[i - 1] - nums[i - 1] + nums[i - 1 + k];
+            }
+            
+            return sum;
+        }
+    }
+    ```
+
+18. 给定一个整数数组，找到和为零的子数组。你的代码应该返回满足要求的子数组的起始位置和结束位置
+
+```java
+class Solution {
+    /**
+     * @param nums: A list of integers
+     * @return: A list of integers includes the index of the first number and the index of the last number
+     */
+    public List<Integer> subarraySum(int[] nums) {
+        // write your code here
+        List<Integer> result = new ArrayList<Integer>();
+        if (nums == null || nums.length == 0) {
+            return result;
+        }
+        
+        Map<Integer, Integer> map = new HashMap<Integer, Integer>();
+        map.put(0, -1);
+        int sum = 0;
+        for (int i = 0; i < nums.length; i++) {
+            sum += nums[i];
+            if (map.containsKey(sum)) {
+                result.add(map.get(sum) + 1);
+                result.add(i);
+            }
+            map.put(sum, i);
+        }
+        
+        return result;
+    }
+}
+```
+
+19. 给定一个由 `n` 个正整数组成的数组和一个正整数 `s` ，请找出该数组中满足其和 ≥ s 的最小长度子数组。如果无解，则返回 -1
+
+```java
+class Solution {
+    /**
+     * @param nums: an array of integers
+     * @param s: An integer
+     * @return: an integer representing the minimum size of subarray
+     */
+    // 两根同向指针对数组进行一次遍历,如果当前和小于s,右指针右移,扩大区间,反之做指针右移,缩小区间
+    //这个过程中维持区间和不小于s,然后更新答案即可
+    public int minimumSize(int[] nums, int s) {
+        // write your code here
+        if (nums == null || nums.length == 0) {
+            return -1;
+        }
+        
+        int left = 0;
+        int right = 0;
+        int len = nums.length;
+        int sum = 0;
+        int subLen = Integer.MAX_VALUE;
+        while (left < len && right < len) {
+            sum += nums[right];
+            
+            while (sum >= s) {
+                subLen = Math.min(subLen, right - left + 1);
+                sum -= nums[left];
+                left++;
+            }
+            
+            right++;
+        }
+        
+        if (subLen == Integer.MAX_VALUE) {
+            return -1;
+        }
+        
+        return subLen;
+    }
+}
+```
+
