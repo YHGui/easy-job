@@ -59,7 +59,7 @@
     - set hive.auto.convert.join = true; 或者手动加上**/\*+mapjoin(表名)\*/**
   
     1. 通过MapReduce Local Task,将小表读入内存，生成HashTableFile上传到Distributed Cache，这里会对HashTableFile进行压缩
-    2. MapReduce Job在Map阶段,每个Mapper从Distributed Cache读取HashTableFiles到内存中,顺序扫描达标,在Map阶段直接进行Join,将数据传递给下一个MapReduce任务
+    2. MapReduce Job在Map阶段,每个Mapper从Distributed Cache读取HashTableFiles到内存中,顺序扫描,在Map阶段直接进行Join,将数据传递给下一个MapReduce任务
   
     ![deploy](https://awps-assets.meituan.net/mit-x/blog-images-bundle-2014/a4cd80c9.png)
   
