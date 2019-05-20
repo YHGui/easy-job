@@ -754,3 +754,424 @@ class Solution {
     - 横竖各n+1条直线,任意各取两条都可以组成一个长方形,个数为C(n+1, 2) * C(n+1, 2) = (n+1)^2 * n^2 / 4
     - 正方形个数为n^2 + ...+2^2+1^2 = n(n+1)(2n+1)/6
     - 如果单单要求正方形,则是上述之差
+
+21. 翻转链表中第m个节点到第n个节点的部分
+
+```java
+class Solution {
+    public ListNode reverseBetween(ListNode head, int m, int n) {
+        //哨兵节点
+        ListNode dummy = new ListNode(0);
+        dummy.next = head;
+        //两个指针,一前一后,分别指向两个节点位置
+        ListNode prev = dummy;
+        ListNode curt = head;
+        //curt指针运动到m位置,prev节点随之一起运动到m前一个位置
+        for (int i = 1; i < m; i++) {
+            curt = curt.next;
+            prev = prev.next;
+        }
+        //记下m节点位置,和m前一个节点位置
+        ListNode mNode = curt;
+        ListNode mPrev = prev;
+        
+        //前后两节点翻转,同时往前运动直到prev节点到n节点位置,curt节点到了n节点下一个位置
+        for(int i = m; i <= n; i++) {
+            ListNode temp = curt.next;
+            curt.next = prev;
+            prev = curt;
+            curt = temp;
+        }
+        //翻转结束,m节点前的next指针指向n节点;m节点的next指针指向n节点的next位置
+        mPrev.next = prev;
+        mNode.next = curt;
+        //返回dummy节点的next指针
+        return dummy.next;
+    }
+}
+```
+
+22. 给你一个链表以及一个*k*,将这个链表从头指针开始每*k*个翻转一下。
+    链表元素个数不是*k*的倍数，最后剩余的不用翻转
+
+思路:每次翻转k个节点,传入head节点的prev节点,输出下一轮翻转k节点head节点的prev节点
+
+```java
+class Solution {
+    public ListNode reverseKGroup(ListNode head, int k) {
+        // write your code here
+        if (head == null || k <= 1) {
+            return head;
+        }
+        
+        ListNode dummy = new ListNode(1);
+        dummy.next = head;
+        
+        ListNode prev = dummy;
+        while (prev != null) {
+            prev = reverseNextKNodes(prev, k);
+        }
+        
+        
+        return dummy.next;
+    }
+    
+    private ListNode reverseNextKNodes(ListNode head, int k) {
+        ListNode curt = head;
+        ListNode n1 = head.next;
+        //判断是否有k个节点,没有则返回null
+        for (int i = 0; i < k; i++) {
+            curt = curt.next;
+            if (curt == null) {
+                return null;
+            }
+        }
+        //记下k node和k+1 node节点
+        ListNode nk = curt;
+        ListNode nkplus = curt.next;
+        //翻转这k个节点
+        ListNode prev = head;
+        curt = head.next;
+        while (curt != nkplus) {
+            ListNode temp = curt.next;
+            curt.next = prev;
+            prev = curt;
+            curt = temp;
+        }
+        //翻转后需要连接起来
+        head.next = nk;
+        n1.next = nkplus;
+        
+        return n1;
+    }
+}
+```
+
+23. 链表相加
+
+```java
+class Solution {
+    /**
+     * @param l1: the first list
+     * @param l2: the second list
+     * @return: the sum list of l1 and l2 
+     */
+    public ListNode addLists(ListNode l1, ListNode l2) {
+        // write your code here
+        if (l1 == null && l2 == null) {
+            return null;
+        }
+        
+        ListNode dummy = new ListNode(0);
+        ListNode head = dummy;
+        int carry = 0;
+        while (l1 != null && l2 != null) {
+            int sum = carry + l1.val + l2.val;
+            head.next = new ListNode(sum % 10);
+            carry = sum / 10;
+            l1 = l1.next;
+            l2 = l2.next;
+            head = head.next;
+        }
+        
+        while (l1 != null) {
+            int sum = carry + l1.val;
+            head.next = new ListNode(sum % 10);
+            carry = sum / 10;
+            l1 = l1.next;
+            head = head.next;
+        }
+        
+        while (l2 != null) {
+            int sum = carry + l2.val;
+            head.next = new ListNode(sum % 10);
+            carry = sum / 10;
+            l2 = l2.next;
+            head = head.next;
+        }
+        
+        if (carry != 0) {
+            head.next = new ListNode(carry);
+        }
+        
+        return dummy.next;
+    }
+}
+```
+
+24. 链表相加2(和23不一样的地方在于顺序不一致,因此先reverse 链表就可以完全和上面一样了,然后再reverse)
+
+```java
+class Solution {
+    /**
+     * @param l1: The first list.
+     * @param l2: The second list.
+     * @return: the sum list of l1 and l2.
+     */
+    public ListNode addLists2(ListNode l1, ListNode l2) {
+        // write your code here
+        ListNode reverseL1 = reverse(l1);
+        ListNode reverseL2 = reverse(l2);
+        return reverse(addLists(reverseL1, reverseL2));
+        
+    }
+    
+    private ListNode reverse(ListNode head) {
+        if (head == null) {
+            return null;
+        }
+        
+        ListNode prev = null;
+        while (head != null) {
+            ListNode temp = head.next;
+            head.next = prev;
+            prev = head;
+            head = temp;
+        }
+        
+        return prev;
+    }
+    
+    private ListNode addLists(ListNode l1, ListNode l2) {
+        // write your code here
+        if (l1 == null && l2 == null) {
+            return null;
+        }
+        
+        ListNode dummy = new ListNode(0);
+        ListNode head = dummy;
+        int carry = 0;
+        while (l1 != null && l2 != null) {
+            int sum = carry + l1.val + l2.val;
+            head.next = new ListNode(sum % 10);
+            carry = sum / 10;
+            l1 = l1.next;
+            l2 = l2.next;
+            head = head.next;
+        }
+        
+        while (l1 != null) {
+            int sum = carry + l1.val;
+            head.next = new ListNode(sum % 10);
+            carry = sum / 10;
+            l1 = l1.next;
+            head = head.next;
+        }
+        
+        while (l2 != null) {
+            int sum = carry + l2.val;
+            head.next = new ListNode(sum % 10);
+            carry = sum / 10;
+            l2 = l2.next;
+            head = head.next;
+        }
+        
+        if (carry != 0) {
+            head.next = new ListNode(carry);
+        }
+        
+        return dummy.next;
+    }
+}
+```
+
+25. 最大连续子数组
+
+```java
+class Solution {
+    /**
+     * @param nums: A list of integers
+     * @return: A integer indicate the sum of max subarray
+     */
+    public int maxSubArray(int[] nums) {
+        // write your code here
+        if (nums == null || nums.length == 0) {
+            return 0;
+        }
+        
+        int max = Integer.MIN_VALUE;
+        int sum = 0;
+        int minSum = 0;
+        int len = nums.length;	
+        for (int i= 0; i < len; i++) {
+            sum += nums[i];
+            max = Math.max(max, sum - minSum);
+            
+            if (sum < minSum) {
+                minSum = sum;
+            }
+        }
+        
+        return max;
+    }
+}
+```
+
+26. 翻转二叉树
+
+思路:分治法,首先递归调用翻转左右子树,然后分别翻转root的左右子树;
+
+```java
+class Solution {
+    public TreeNode invertTree(TreeNode root) {
+        if(root == null){
+            return null;
+        }
+        invertTree(root.left);
+        invertTree(root.right);
+        TreeNode temp = root.left;
+        root.left = root.right;
+        root.right = temp;
+        return root;
+    }
+}
+```
+
+27. LRU Cache
+
+```java
+public class LRUCache {
+    private int capacity;
+    private HashMap<Integer, ListNode> hashMap = new HashMap<Integer, ListNode>();
+    private ListNode head = new ListNode(-1, -1);
+    private ListNode tail = new ListNode(-1, -1);
+
+    public LRUCache(int capacity) {
+        this.capacity = capacity;
+        tail.prev = head;
+        head.next = tail;
+    }
+
+    public int get(int key) {
+        if (!hashMap.containsKey(key)) {
+            return -1;
+        }
+
+        ListNode curt = hashMap.get(key);
+        curt.prev.next = curt.next;
+        curt.next.prev = curt.prev;
+
+        moveToTail(curt);
+
+        return hashMap.get(key).value;
+    }
+
+    public void set(int key, int value) {
+        if (get(key) != -1) {
+            hashMap.get(key).value = value;
+            return;
+        }
+
+        if (hashMap.size() == capacity) {
+            hashMap.remove(head.next.key);
+            head.next = head.next.next;
+            head.next.prev = head;
+        }
+
+        ListNode insert = new ListNode(key, value);
+        hashMap.put(key, insert);
+        moveToTail(insert);
+    }
+
+    private void moveToTail(ListNode node) {
+        node.next = tail;
+        node.prev = tail.prev;
+        tail.prev.next = node;
+        tail.prev = node;
+    }
+}
+
+class ListNode {
+    ListNode next;
+    ListNode prev;
+    int key;
+    int value;
+
+    public ListNode(int key, int value) {
+        next = null;
+        prev = null;
+        this.key = key;
+        this.value = value;
+    }
+}
+```
+
+28. 括号匹配问题
+
+```java
+class Solution {
+    /**
+     * @param s: A string
+     * @return: whether the string is a valid parentheses
+     */
+    public boolean isValidParentheses(String s) {
+        // write your code here
+        if (s == null || s.length() == 0) {
+            return true;
+        }
+        
+        if (s.length() % 2 == 1) {
+            return false;
+        }
+        
+        Stack<Character> stack = new Stack<Character>();
+        for (int i = 0; i < s.length(); i++) {
+            if (s.charAt(i) == ')' || s.charAt(i) == '}' || s.charAt(i) == ']') {
+                if (stack.isEmpty()) {
+                    return false;
+                }
+                char c = stack.pop();
+                if ((c == '(' && s.charAt(i) != ')')  || (c == '[' && s.charAt(i) != ']') || (c == '{' && s.charAt(i) != '}')) {
+                    return false;
+                }
+            } else {
+                stack.push(s.charAt(i));
+            }
+        }
+        
+        return stack.isEmpty();
+    }
+}
+```
+
+29. 生成括号
+
+```java
+class Solution {
+    /**
+     * @param n: n pairs
+     * @return: All combinations of well-formed parentheses
+     */
+    public List<String> generateParenthesis(int n) {
+        // write your code here
+        List<String> result = new ArrayList<String>();
+        if (n <= 0) {
+            return result;
+        }
+        
+        helper(result, "", n, n);
+        
+        return result;
+        
+        
+        
+    }
+    //递归定义:观察当前括号,左右括号分别可以如何加到当前字符串中
+    private void helper(List<String> result, String curt, int left, int right) {
+        //递归的出口,左右括号都不剩了,将当前括号加入到结果中,退出.
+        if (left == 0 && right == 0) {
+            result.add(curt);
+            return;
+        }
+        //仍剩下左边括号可加入
+        if (left > 0) {
+            helper(result, curt + '(', left - 1, right);
+        } 
+        //仍剩右边括号可加入,且左边括号剩得比右边少
+        if (right > 0 && left < right) {
+            helper(result, curt + ')', left, right - 1);
+        }
+    }
+}
+```
+

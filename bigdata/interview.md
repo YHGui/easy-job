@@ -230,7 +230,7 @@
 - 对于大数据来说,数据量大并不可怕,最怕的是数据倾斜,由于数据分布不均匀,造成数据大量集中在某个点上,造成数据热点问题,一般有shuffle,比如join或者group by
 - 现象
   - Hive中大部分task快速完成,只有极少数task执行非常慢,执行时间长,或者等待很长时间后提示内存不足,reduce阶段卡在99%不能结束
-  - Sprak: UI对应job/stage/task
+  - Sprak: 同一个Stage的不同partition可以并行处理,而具有依赖关系的不同Stage之间是串行处理的.假设某个Spark Job分为Stage 0和Stage 1两个Stage,且Stage 1依赖于Stage 0,那Stage 0完全处理结束之前不会处理Stage 1,而Stage 0可能包含N个Task,这N个Task可以并行执行.
   - 例行作业运行正常,突然OOM,遇到数据倾斜需要具备自适应的能力
   - SparkStreaming做实时算法时候,一直会有executor出现OOM的错误,但是其余的executor内存使用率却很低
 
@@ -271,6 +271,8 @@
 
 #### 解决办法
 
+##### Hive 
+
 - hive.groupby.skewindata=true
   - 生成的查询计划会有两个MR job，第一个MR job中，Map的输出结果会随机分布到Reduce中，每个Reduce做部分聚合操作；第二个MR job再根据预处理的数据按照Group By Key分布到Reduce中，最终完成聚合操作
 - Map端聚合：hive.map.aggr=true，map端部分聚合，相当于Combiner
@@ -281,3 +283,19 @@
     - 在Spark中,只要生成RDD的时候,HashPartitioner相同,且分区数相同,就不会产生shuffle
 - key分布不均匀,解决:打散key
   - 比如在双11时数据量特别大，group by date时发生数据倾斜，这时候可以人为的将date这个key人为的加上随机数，然后在后续再还原回来
+
+##### Spark
+
+- 避免数据源的数据倾斜
+  - Spark Streaming通过DirectStream方式读取Kafka数据,Kafka每个Partition对应Spark的一个Task,所以Kafka内相关Topic的各Partition之间数据是否平衡直接决定Spark处理该数据时是否会产生数据倾斜,如果使用随机partitioner,概率上讲,各个partition间的数据会达到平衡.
+  - 数据源侧存在不可切分文件,且文件内包含的数据量相差较大
+    - 解决:尽量使用可切分的格式代替不可切分的格式,或者保证各文件实际包含数据量大致相同
+- 增加并行度
+  - 大量不同的key被分配到了相同的Task造成该Task数据量过大.一般增大并行度,但有时也可减小并行度.(只能将分配到同意Task的不同key分散开,但对于同一key倾斜严重情况不适用)
+- 自定义partitioner,使数据均匀分配,原本分配到同一个task的不同key分配到不同task
+- reduce side join变为map side join
+  - Spark的broadcast机制,变为map join,避免shuffle,从而完全消除shuffle带来的倾斜
+  - 做法:在Java/Scala代码中将小数据集数据拉取到Driver,然后通过BroadCast方案将小数据集数据广播到各个Executor.或者使用sql前,将BroadCast的阈值调整得足够大,从而使用BroadCast生效.
+- 为skew的key增加随机前/后缀
+  - 给skew的key增加前/后缀,和另外的数据Join的话,与倾斜Key对应的部分数据,与随机前缀作笛卡尔乘积,从而保证无论数据倾斜侧倾斜Key如何加前缀,都能与之正常Join.
+- 大表随机添加前缀,小表扩大N倍
