@@ -5,7 +5,7 @@
    给定一个字符串,判断是否是回文字符串,字符串只考虑字母和数字,忽略字母大小写
 
    ```java
-class Solution {
+   class Solution {
        public boolean isPalindrome(String s) {
            if (s == null || s.length() == 0) {
                return true;
@@ -44,13 +44,13 @@ class Solution {
    }
    //时间复杂度为O(n), 空间复杂度为O(1)
    ```
-   
-1. 两数之和(two sum),leetcode 1, HashMap
+
+2. 两数之和(two sum),leetcode 1, HashMap
 
    给定数组和目标数,求数组中两数之和为目标数的下标
 
    ```Java
-class Solution {
+   class Solution {
        public int[] twoSum(int[] nums, int target) {
            //用一个HashMap做辅助
            Map<Integer, Integer> map = new HashMap<Integer, Integer>();
@@ -69,7 +69,7 @@ class Solution {
    }
    //时间复杂度为O(n), 空间复杂度为O(n)----HashMap辅助的
    ```
-   
+
 3. 有序数组两数之和(two sum II),leetcode 167, two pointers
 
    给定有序数组和目标数,求数组中两数之和为目标数的下标
@@ -79,7 +79,7 @@ class Solution {
        public int[] twoSum(int[] numbers, int target) {
            int left = 0;
            int right = numbers.length - 1;
-   
+
            while (left < right) {
                if (numbers[left] + numbers[right] > target) {
                    right--;
@@ -89,7 +89,7 @@ class Solution {
                    return new int[]{left + 1, right + 1};
                }
            }
-   
+
            return new int[]{-1, -1};
        }
    }
@@ -133,7 +133,7 @@ class Solution {
            Stack<TreeNode> stack = new Stack<TreeNode>();
            stack.push(root.left);
            stack.push(root.right);
-   
+
            while (!stack.isEmpty()) {
                //pop出左右子树
                TreeNode right = stack.pop(), left = stack.pop();
@@ -160,16 +160,16 @@ class Solution {
 5. 不用+/-求两数之和(Sum of Two Integers),leetcode 371,异或,与
 
    ```Java
-//递归版本 a & b 是进位情况,a ^ b是不进位情况的相加
+   //递归版本 a & b 是进位情况,a ^ b是不进位情况的相加
    Class Solution {
        public int getSum(int a, int b) {
            return b == 0 ? a : getSum(a^b, (a&b)<<1)
        }
    }
    ```
-   
+
    ```Java
-//尾递归优化
+   //尾递归优化
    Class Solution {
        public int getSum(int a, int b) {
            while (b != 0) {
@@ -182,7 +182,7 @@ class Solution {
        }
    }
    ```
-   
+
 6. 单身数(Single number),leetcode 136,异或/hashset
 
    ```Java
@@ -1171,6 +1171,280 @@ class Solution {
         if (right > 0 && left < right) {
             helper(result, curt + ')', left, right - 1);
         }
+    }
+}
+```
+
+30. 寻找旋转排序数组中的最小值
+
+```Java
+class Solution {
+    /**
+     * @param nums: a rotated sorted array
+     * @return: the minimum number in the array
+     */
+    public int findMin(int[] nums) {
+        // write your code here
+        if (nums == null || nums.length == 0) {
+            return -1;
+        }
+        //二分法，找到第一个比最后一个数小的数， target = nums[end]
+        int start = 0;
+        int end = nums.length - 1;
+        int target = nums[end];
+        
+        while(start + 1 < end) {
+            int mid = start + (end - start) / 2;
+            if (nums[mid] <= target) {
+                end = mid;
+            } else {
+                start = mid;
+            }
+        }
+        
+        if (nums[start] <= target) {
+            return nums[start];
+        } else {
+            return nums[end];
+        }
+    }
+}
+```
+
+31. 山脉序列中的最大值
+
+```Java
+class Solution {
+    /**
+     * @param nums a mountain sequence which increase firstly and then decrease
+     * @return then mountain top
+     */
+    public int mountainSequence(int[] nums) {
+        // Write your code here
+        if (nums == null || nums.length == 0) {
+            return 0;
+        }
+        int start = 0;
+        int end = nums.length - 1;
+        while (start + 1 < end) {
+            int mid = start + (end - start) / 2;
+          //找到峰值
+            if (nums[mid] > nums[mid + 1]) {
+                end = mid;
+            } else {
+                start = mid;
+            }
+        }
+        return Math.max(nums[start], nums[end]);
+    }
+}
+```
+
+32. 搜素旋转排序数组
+
+```Java
+class Solution {
+    /** 
+     *@param A : an integer rotated sorted array
+     *@param target :  an integer to be searched
+     *return : an integer
+     */
+    public int search(int[] A, int target) {
+        // write your code here
+        if (A == null || A.length == 0){
+            return -1;
+        }
+        int start = 0;
+        int end = A.length - 1;
+        while (start + 1 < end){
+            int mid = start + (end - start) / 2;
+            if (A[mid] == target){
+                return mid;
+            }
+            if (A[mid] > A[start]){
+                if (A[start] <= target && target <= A[mid]){
+                    end = mid;
+                } else {
+                    start = mid;
+                }
+            } else {
+                if (A[mid] <= target && target <= A[end]){
+                    start = mid;
+                } else {
+                    end = mid;
+                }
+            }
+        }
+        if (A[start] == target){
+            return start;
+        }
+        if (A[end] == target){
+            return end;
+        }
+        return -1;
+    }
+}
+```
+
+33. 全排列
+
+```Java
+class Solution {
+    /*
+     * @param nums: A list of integers.
+     * @return: A list of permutations.
+     */
+    public List<List<Integer>> permute(int[] nums) {
+        // write your code here
+        List<List<Integer>> results = new ArrayList<List<Integer>>();
+        if (nums == null) {
+            return results;
+        }
+        
+        if (nums.length == 0) {
+            results.add(new ArrayList<Integer>());
+            return results;
+        }
+        
+        List<Integer> permutation = new ArrayList<Integer>();
+        Set<Integer> set = new HashSet<Integer>();
+        helper(nums, permutation, set, results);
+        
+        return results;
+    }
+    
+    
+    private void helper(int[] nums,
+                        List<Integer> permutation,
+                        Set<Integer> set,
+                        List<List<Integer>> results) {
+        
+        if (permutation.size() == nums.length) {
+            results.add(new ArrayList<Integer>(permutation));
+            return;
+        }
+        
+        for (int i = 0; i < nums.length; i++) {
+            if (set.contains(nums[i])) {
+                continue;
+            }
+            
+            permutation.add(nums[i]);
+            set.add(nums[i]);
+            helper(nums, permutation, set, results);
+            set.remove(nums[i]);
+            permutation.remove(permutation.size() - 1);
+        }
+    }
+}
+```
+
+34. 岛个数
+
+```Java
+class Solution {
+    
+    //定义坐标类
+    class Coordinate {
+        int x;
+        int y;
+        public Coordinate(int x, int y) {
+            this.x = x;
+            this.y = y;
+        }
+    }
+    /**
+     * @param grid a boolean 2D matrix
+     * @return an integer
+     */
+    public int numIslands(boolean[][] grid) {
+        // Write your code here
+        if (grid == null || grid.length == 0 || grid[0].length == 0) {
+            return 0;
+        }
+        int islandsNum = 0;
+        int rowNum = grid.length;
+        int colNum = grid[0].length;
+        for (int i = 0; i < rowNum; i++) {
+            for (int j = 0; j < colNum; j++) {
+                if (grid[i][j]) {
+                    markByBFS(grid, i, j);
+                    islandsNum++;
+                }
+            }
+        }
+        return islandsNum;
+    }
+    
+    private void markByBFS(boolean[][] grid, int i, int j) {
+        int[] directionX = {0, 0, -1, 1};
+        int[] directionY = {1, -1, 0, 0};
+        Queue<Coordinate> queue = new LinkedList<Coordinate>();
+        queue.offer(new Coordinate(i, j));
+        grid[i][j] = false;
+        
+        while(!queue.isEmpty()) {
+            Coordinate coor = queue.poll();
+            for (int k = 0; k < 4; k++) {
+                Coordinate adj = new Coordinate(
+                    coor.x + directionX[k],
+                    coor.y + directionY[k]
+                    );
+                if (!inBound(adj, grid)) {
+                    continue;
+                }
+                if (grid[adj.x][adj.y]) {
+                    grid[adj.x][adj.y] = false;
+                    queue.offer(adj);
+                }
+            }
+        }
+    }
+    //判断是否在矩阵的边界外
+    private boolean inBound(Coordinate coor, boolean[][] grid) {
+        int rowNum = grid.length;
+        int colNum = grid[0].length;
+        
+        return coor.x >= 0 && coor.y >= 0 && coor.x < rowNum && coor.y < colNum;
+    }
+}
+```
+
+35. 根据中序遍历和后序遍历树构造二叉树
+
+```java
+class Solution {
+    private int findPosition(int[] arr, int start, int end, int key) {
+        int i;
+        for (i = start; i <= end; i++) {
+            if (arr[i] == key) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private TreeNode myBuildTree(int[] inorder, int instart, int inend,
+            int[] postorder, int poststart, int postend) {
+        if (instart > inend) {
+            return null;
+        }
+
+        TreeNode root = new TreeNode(postorder[postend]);
+        int position = findPosition(inorder, instart, inend, postorder[postend]);
+
+        root.left = myBuildTree(inorder, instart, position - 1,
+                postorder, poststart, poststart + position - instart - 1);
+        root.right = myBuildTree(inorder, position + 1, inend,
+                postorder, poststart + position - instart, postend - 1);
+        return root;
+    }
+
+    public TreeNode buildTree(int[] inorder, int[] postorder) {
+        if (inorder.length != postorder.length) {
+            return null;
+        }
+        return myBuildTree(inorder, 0, inorder.length - 1, postorder, 0, postorder.length - 1);
     }
 }
 ```

@@ -3,6 +3,7 @@
 ```Java
 class Solution {
     public static String add36(String str1, String str2) {
+      	String CHARS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
         int str1len = str1.length();
         int str2len = str2.length();
         int maxLen = Math.max(str1len, str2len);
