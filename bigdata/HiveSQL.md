@@ -85,6 +85,18 @@ select sum(uuid_num) as total_num
 ) final;
 ```
 
-1. 对uuid去重,并打tag
-2. 按照tag进行求和,统计每个tag下的uuid的个数
-3. 对所有的分组求和
+- 对uuid去重,并打tag
+- 按照tag进行求和,统计每个tag下的uuid的个数
+- 对所有的分组求和
+
+5. Spark实现Word Count
+
+```scala
+val textfile = sc.textFile("hdfs_path")
+val wordCount = textfile.flatMap(line => line.split(" ")).map(word => (word, 1)).reduceByKey((a, b) => a + b)
+wordCount.collect()
+
+uid, date计算uv
+val textfile = sc.textFile("hdfs_path")
+val textRDD = textfile.map(line => line.split(" ")(0) + "_" + line.split(" ")(1)).distinct().map(line => (line, 1)).reduceByKey(_ + _).map(item => item.swap).sortByKey(false).map(item => item.swap)
+```

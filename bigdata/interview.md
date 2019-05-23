@@ -287,15 +287,18 @@
 ##### Spark
 
 - 避免数据源的数据倾斜
-  - Spark Streaming通过DirectStream方式读取Kafka数据,Kafka每个Partition对应Spark的一个Task,所以Kafka内相关Topic的各Partition之间数据是否平衡直接决定Spark处理该数据时是否会产生数据倾斜,如果使用随机partitioner,概率上讲,各个partition间的数据会达到平衡.
-  - 数据源侧存在不可切分文件,且文件内包含的数据量相差较大
+  - **读Kafka**时:Spark Streaming通过DirectStream方式读取Kafka数据,Kafka每个Partition对应Spark的一个Task,所以Kafka内相关Topic的各Partition之间数据是否平衡直接决定Spark处理该数据时是否会产生数据倾斜,如果使用随机partitioner,概率上讲,各个partition间的数据会达到平衡.
+  - **读文件**时数据源侧存在不可切分文件,且文件内包含的数据量相差较大
     - 解决:尽量使用可切分的格式代替不可切分的格式,或者保证各文件实际包含数据量大致相同
-- 增加并行度
-  - 大量不同的key被分配到了相同的Task造成该Task数据量过大.一般增大并行度,但有时也可减小并行度.(只能将分配到同意Task的不同key分散开,但对于同一key倾斜严重情况不适用)
+- 增加(或减小)并行度
+  - 大量不同的key被分配到了相同的Task造成该Task数据量过大.一般增大并行度,但有时也可减小并行度.(只能将分配到同一Task的不同key分散开,但对于同一key倾斜严重情况不适用)
 - 自定义partitioner,使数据均匀分配,原本分配到同一个task的不同key分配到不同task
 - reduce side join变为map side join
   - Spark的broadcast机制,变为map join,避免shuffle,从而完全消除shuffle带来的倾斜
   - 做法:在Java/Scala代码中将小数据集数据拉取到Driver,然后通过BroadCast方案将小数据集数据广播到各个Executor.或者使用sql前,将BroadCast的阈值调整得足够大,从而使用BroadCast生效.
 - 为skew的key增加随机前/后缀
-  - 给skew的key增加前/后缀,和另外的数据Join的话,与倾斜Key对应的部分数据,与随机前缀作笛卡尔乘积,从而保证无论数据倾斜侧倾斜Key如何加前缀,都能与之正常Join.
+  - 给skew的key增加前/后缀,和另外的数据Join的话,与倾斜Key对应的部分数据,与随机前缀作笛卡尔乘积,从而保证无论数据倾斜侧倾斜Key如何加前缀,都能与之正常Join,最后要将倾斜和不倾斜的两部分数据union起来.
+  - 不对全量数据扩容,避免占用过多内存
 - 大表随机添加前缀,小表扩大N倍
+  - 如果RDD中有大量key导致数据倾斜,那么进行拆分key没有什么意义
+- 多种方案组合使用
