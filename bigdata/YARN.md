@@ -149,7 +149,7 @@ YARN调度器是一个可插拔的组件,社区提供:FIFO,Capacity, Fair Schedu
     - 根据策略将DAG图划分多个stage,根据分区从而生成一系列tasks
     - 根据tasks要求向RM申请资源
     - 提交任务并检测任务状态
-  - executor:真正之心task的单元,一个work node上可以有多个executor
+  - executor:真正执行task的单元,一个worker node上可以有多个executor
   - job:由多个stage组成
   - stage:对应一个taskset
   - taskset:对应一组关联的相互之间没有shuffle依赖关系的task组成
