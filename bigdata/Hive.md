@@ -19,6 +19,7 @@
 
 1. Join的实现原理(```(select u.name, o.orderid from order o join user u on o.uid = u.uid;   ```)
 
+- 本质上来讲,Join查询就是根据一个共享的键的集合来合并两个或者更多的数据流.
 - 在map的输出value中为不同表的数据打上tag标记,在reduce阶段根据tag判断数据来源
 
 ![deploy](https://awps-assets.meituan.net/mit-x/blog-images-bundle-2014/73cd82b9.png)

@@ -1,3 +1,7 @@
+
+
+
+
 # Paxos-分布式一致性协议
 
 ## Paxos的理解困境
@@ -42,25 +46,28 @@
 ## 确定一个不可变变量的取值
 
 1. **方案一**：
-   1. **原理**：
+   
+   1. **核心思想**:通过Acceptor互斥访问权让Proposer序列运行，可以简单的实现var取值的一致性
+   2. **原理**：
       1. 先考虑系统由单个Acceptor组成，通过类似互斥锁机制，来管理并发的proposer运行
       2. Proposer首先向Acceptor申请Acceptor的互斥访问权，然后才能Acceptor接受自己的取值
       3. Acceptor给proposer发放互斥访问权，谁申请到互斥访问权，就接收谁提交的取值
       4. 让proposer按照获取互斥访问权的顺序依次访问Acceptor
       5. 一旦Acceptor接收了某个proposer的取值，则认为var取值被确定，其他proposer不再更改
-   2. **基于互斥访问权的Acceptor的实现**
+   3. **基于互斥访问权的Acceptor的实现**
       1. Acceptor保存变量var和一个互斥锁lock
       2. Acceptor::prepare():加互斥锁，给予var的互斥访问权，并返回var当前的取值f
       3. Acceptor::release():解互斥锁，收回var的互斥访问权
       4. Acceptor::accept(var, V):如果已经加锁，并且var没有取值，则设置var。并且释放锁。
-   3. **proposer（var，V）的两阶段实现**
+   4. **proposer（var，V）的两阶段实现**
       1. 第一阶段：通过Acceptor：：prepare获取互斥访问权和当前var的取值，如果不能，返回error，表明锁被别人占用
       2. 第二阶段：根据当前var的取值f，选择执行：
          1. 如果f为null，则通过Acceptor：：accept（var，V）提交数据V
          2. 如果f不为空，则通过Acceptor：：release（）释放访问权，返回<ok, f>。
-   4. 通过Acceptor互斥访问权让Proposer序列运行，可以简单的实现var取值的一致性
    5. **缺点**：Proposer在释放互斥访问权之前发生故障，会导致系统陷入死锁，故不能容忍Proposer机器故障。
+   
 2. **方案二**：引入抢占式访问权，Acceptor可以让某个Proposer获取到的访问权失效，不再接收它的访问，之后，可以讲访问权发放给其他Proposer，让其他Proposer访问Acceptor
+   
    1. **核心思想**：让Proposer将按照epoch递增的顺序抢占式的依次运行，后者会认同前者。
       1. 避免Proposer机器故障带来的死锁问题，并且仍可以保证var取值的一致性
       2. 仍需要引入多Acceptor，单机模块Acceptor故障导致整个系统宕机，无法提供服务
@@ -76,11 +83,29 @@
          1. 获取epoch轮次的访问权和当前var的取值：简单获取当前时间戳为epoch，通过Acceptor：：prepare（epoch），获取epoch的访问权和当前var的取值；如果不能获取，返回<error>
          2. 采用**后者认同前者**的原则执行：
             1. 如果var的取值为空，则肯定旧epoch无法生成确定性取值，则通过Acceptor：：accept（var，epoch，V）提交数据V，成功后返回<ok, V>；如果accept失败，返回<error>（**被新epoch抢占或者acceptor故障**）
-            2. 如果var取值存在，则此取值肯定是确定性取值，此时认同它不再更改，直接返回<ok, accetped_value>
-3. **Paxos**：在方案二基础上引入多Acceptor：Acceptor的实现保持不变。仍采用**喜新厌旧**的原则运行。采用**烧水壶服从多数**的思路：一旦某epoch的取值f被半数以上Acceptor接受，则认为此var取值被确定为f，不再更改。
+            2. 如果var取值存在，则此取值肯定是确定性取值，此时认同它不再更改，直接返回<ok, accepted_value>
+      5. **运行过程**:
+   
+   ![抢占式访问权机制运行过程P1](../images/抢占式访问权机制运行过程P1.png)
+   
+   ![抢占式访问权机制运行过程P2提交阶段](../images/抢占式访问权机制运行过程P2提交阶段.png)
+   
+   ![抢占式访问权机制运行过程P2Accept阶段](../images/抢占式访问权机制运行过程P2Accept阶段.png)
+   
+   ![抢占式访问权机制运行过程P3提交阶段](../images/抢占式访问权机制运行过程P3提交阶段.png)
+   
+3. **Paxos**：在方案二基础上引入多Acceptor：Acceptor的实现保持不变。仍采用**喜新厌旧**的原则运行。采用**少数服从多数**的思路：一旦某epoch的取值f被半数以上Acceptor接受，则认为此var取值被确定为f，不再更改。
+
    1. **核心思想**：在抢占式访问权的基础上引入多Acceptor，保证一个epoch，只有一个proposer运行，proposer按照epoch递增的顺序依次运行；新epoch的proposer采用“后者认同前者”的思路运行，在肯定旧epoch无法生成确定性取值时，新的epoch会提交自己的取值，不会冲突。一旦旧epoch形成确定性取值，新epoch肯定可以获取到此取值，并且会认同此取值，不会破坏。
-   2. Propose（var，V）的两阶段实现
+   2. **Propose（var，V）的两阶段实现**
       1. 第一阶段和**方案二不同之处**：获取半数以上Acceptor的访问权和对应一组var取值
       2. 第二阶段和**方案二不同之处**：向epoch对应的所有Acceptor提交取值<epoch, V>，如果收到半数以上成功，则返回<ok, V>，否则返回<error>
-   3. 容错：半数以下Acceptor出现故障时，存活的Acceptor仍然可以生成var的确定性取值；一旦var取值被确定，即使出现半数以下Acceptor故障，此取值可以被获取，并且将不再被改变。
-   4. 存在的Liveness问题：新轮次的抢占会让旧轮次停止运行，如果每一轮次在第二阶段执行成功之前都被新一轮抢占，则导致活锁
+   3. **容错**：半数以下Acceptor出现故障时，存活的Acceptor仍然可以生成var的确定性取值；一旦var取值被确定，即使出现半数以下Acceptor故障，此取值可以被获取，并且将不再被改变。
+   4. **存在的Liveness问题**：新轮次的抢占会让旧轮次停止运行，如果每一轮次在第二阶段执行成功之前都被新一轮抢占，则导致活锁
+   5. **运行过程**
+
+   ![Paxos运行过程P1提交阶段](../images/Paxos运行过程P1提交阶段.png)
+
+   ![Paxos运行过程P2提交阶段和P1Accept阶段](../images/Paxos运行过程P2提交阶段和P1Accept阶段.png)
+
+   ![Paxos运行过程P2Accept阶段](../images/Paxos运行过程P2Accept阶段.png)
