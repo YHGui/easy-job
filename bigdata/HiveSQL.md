@@ -100,3 +100,7 @@ uid, date计算uv
 val textfile = sc.textFile("hdfs_path")
 val textRDD = textfile.map(line => line.split(" ")(0) + "_" + line.split(" ")(1)).distinct().map(line => (line, 1)).reduceByKey(_ + _).map(item => item.swap).sortByKey(false).map(item => item.swap)
 ```
+
+6. hive有个定时任务平时正常，没有啥问题，正常一般大概执行1个小时左右，但是今天突然报错了，报错代码：：running beyond physical memory limits. Current usage: 2.0 GB of 2 GB physical memory used; 3.9 GB of 4.2 GB virtual memory used. Killing container
+
+   分析:container分配2g物理内存已经使用完了,虚拟内存4.2g已经使用了3.9g,首先可以查看集群中每个container分配到内存的区间,我们是256M~8G.但是具体每个container实际分配多少内存要看平台资源的负载情况,以及任务的优先级等因素,
