@@ -144,6 +144,68 @@
 
       ![YARN Client](../images/YARN Client Mode.png)
 
+## Spark 优化实践
+
+### 基本原则
+
+1. 提高资源利用率,不要让cpu空等,内存申请要合适
+2. 减小数据量
+3. 减少输出碎片,压缩输出数据
+4. 减少shuffle
+5. 减免数据倾斜
+
+### spark-shell
+
+很多同学在起spark-shell的时候直接用了--num-executor参数,而spark-shell大部分时间都是挂在那儿不动的,这会造成很大的浪费,对于很小的临时任务,建议使用local模式,命令行为:
+
+```shell
+spark-shell --cluster c3prc-hadoop-spark2.1
+spark-shell --cluster zjyprc-hadoop-spark2.1
+```
+
+如果跑的数据量比较大,需要放在集群上才可以跑的,一定要使用动态executor分配,命令行为:
+
+```shell
+spark-shell --cluster c3prc-hadoop-spark2.1 --deploy-mode client --master yarn --executor-memory 8G --driver-memory 8G --conf spark.shuffle.service.enabled=true --conf spark.dynamicAllocation.enabled=true --conf spark.dynamicAllocation.maxExecutors=[最多需要的executor数量] --conf spark.yarn.job.owners=[提交同学的大名] --queue [需要使用的队列名]
+
+spark-shell --cluster zjyprc-hadoop-spark2.1 --deploy-mode client --master yarn --executor-memory 8G --driver-memory 8G --conf spark.shuffle.service.enabled=true --conf spark.dynamicAllocation.enabled=true --conf spark.dynamicAllocation.maxExecutors=[最多需要的executor数量] --conf spark.yarn.job.owners=[提交同学的大名] --queue [需要使用的队列名]
+```
+
+经常使用spark-shell的同学建议在bashrc里给自己常用的shell命令配一个alias,就不用每次复制命令了
+
+跑海外数据的时候，要在海外的服务器起spark-shell。如果在国内机房启动，会导致大量的跨机房数据传输，容易被SRE请喝茶。
+
+### 合理配置资源
+
+- 计算型,内存小点,--executor-cores 2
+- 数据装载型任务,尽量见效executor数量,提高单个executor qps,并且这类任务的内存可以配置得非常小
+- 任务的gc情况,确保资源分配合理
+- 解决慢节点问题:--conf spark.speculation=true --conf spark.speculation.quantile=0.9 --conf spark.speculation.multiplier=2
+
+### Persisit/Cache
+
+- 序列化是一件很耗时的操作
+- 不要针对大数据集做
+- 只用一次的数据不要做这个操作
+- 记得数据不用以后即时做unpersist释放内存
+
+### HDFS注意事项
+
+- 一定记得压缩数据，不要保存未压缩数据
+  - 尽量使用结构化数据存储格式(例如parquet、thrift sequence file)
+  - 尽量不要使用JSON/XML
+  - 压缩参数参考输出方式的文档
+- 控制平均输出文件大小，减少namenode占用
+  - 输出的时候通过coalesce/repartition来控制输出文件数量
+
+### Shuffle优化
+
+- Broadcast join,将小数据集广播出去,这样不会有shuffle
+- 多次的join理论上都可以通过多rdd union后做一次group by解决
+- 尽量减少在shuffle前的数据量,filter越早做越好
+- 注意数据倾斜问题
+- 尽量使用Spark Sql解决问题,很多人肉优化都不需要操心
+
 ## Chapter 1 Introduction to High Performance Spark
 
 ### What is Spark and Why performance matters
