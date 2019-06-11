@@ -18,19 +18,27 @@ Mesa是一个分布式、多副本的、高可用的数据处理、存储和查�
     - 支持增量实时更新,吞吐达到百万行/秒,增量在分钟级即可被查询到的queryability
   - **Query Performance**:同时支持数百毫秒低延迟的点查询和高吞吐的批量查询
   - **Scalability**:数据摄入和查询性能可以随集群规模线性增长
-  - **Online Data and Metadata Transformation**:在线的表Schema变更,表的Schema变更不会影响数据的摄入和查询
+  - **Online Data and Metadata Transformation**:在线的表Schema变更,表的Schema变更不会影响数据的摄入和查询。业务不断变化，对于schema的变更，包括加表、删表、加列、减列，新建索引，修改无话视图等都必须不能停服在线完成，而且不能影响数据更新和查询。
 - HOW
   - 水平分区和多副本,实现storage scalability和availability
   - 底层数据多版本管理,实现数据一致性,数据更新时不影响查询
-  - 数据batch更新,采用MVCC,每次更新会分配一个版本号,然后周期性的摄入到Mesa
+  - 数据batch更新,采用MVCC,每次更新会分配一个版本号,然后周期性（分钟级）的摄入到Mesa
     - 存储版本问题,需要存储多份数据,聚合数据较小,问题还好
     - 查询时延,多版本查询,需要遍历各个版本,增大查询时延
     - merge策略:base compaction和cumulative compaction
-      - 导入数据为多个singleton delta,到一定版本数就会聚合成一个cumulative deltas,最后每天会通过base compaction将一定周期内的deltas都合并为base deltas,查询只需要查询一个base deltas,一个cumulative deltas和少数singleton deltas即可,其中compaction是后台并发和异步执行的,且key是按序存储的,merge是线性时间
+      - 导入数据为多个singleton delta,到一定版本数（比如10个）就会聚合成一个cumulative deltas,最后每天会通过base compaction将一定周期内的deltas都合并为base deltas,查询只需要查询一个base deltas,一个cumulative deltas和少数singleton deltas即可,其中compaction是后台并发和异步执行的,且key是按序存储的,merge是线性时间
+
+        ![](../images/Mesa两级合并结构.png)
     - Mesa物理结构和索引结构
-      - 每个deltas都是immutable,需求是存储空间高效和快速查询特点key.给特定key建立索引
-      - 每个table按照大小拆分为data files,然后几百行数据会组织成一个row blocks,每个row blocks按照column进行存储
-      - 每个data files都会有对应的index file,一个索引项是<key, value>,key是row block的第一个key,value是row blocks在data files中的offset.查找特定key的过程就是:先加载index文件,二分查找index文件获取包含特定key的row blocks的offset,然后从data files中获取指定的row blocks,最后在row blocks中二分查询特定的key
+      - Mesa中的delta、cumulative和base在物理存储上格式一样，都是immutable的，这样就很方便做mini-batch的增量的更新，而不至于很影响吞吐，因为compaction都是异步的。
+
+      - Mesa的存储格式要尽可能的节约空间，同时支持点查（fast seeking to a specific key），Mesa设计了索引和数据Data文件，物理上Index和Data数据是分开的，每个Index实际就是Short Key的顺序排列外加offset偏移量，每个Data就是Key+Value的顺序存储。每个表就是这样多个Index和多个Data的集合。
+
+      - Data文件中的数据按照Key有序排列，按行切块形成row block，按列存储，这种格式和现在的ORC、Parquet很像，row block的大小一般不大，它是从磁盘load到内存的最小粒度，使用这种格式很容易做压缩，因为每一列的格式都是相同的，可以做一些轻量级的编码比如RLE、字典编码、Bitpacking等，在这个基础之上再做重量级的压缩，比如LZO、Snappy、GZIP等，就可以实现压缩比很高的存储。
+
+      - 每个data files都会有对应的index file,一个索引项是<key, value>,key是row block的第一个key,value是row block在data files中的offset.查找特定key的过程就是:先加载index文件,二分查找index文件获取包含特定key的row blocks的offset,然后从data files中load指定的row block到内存,再做一些Predicate filter的Scan，对于Key相同的按照聚合函数做聚合即可把结果查到。
+
+        ![](../images/Mesa物理存储结构.png)
     - Mesa系统架构
       - controller/worker框架,congtroller负责元数据缓存和worker调度器,为各种worker维护不同的调度器
       - 各种类型worker有自己的职责,update,compaction,schema change,checksum workers
@@ -120,13 +128,26 @@ Mesa是一个分布式、多副本的、高可用的数据处理、存储和查�
 
 - **broadcast join**
   - 系统默认实现：将小表进行条件过滤之后，将其广播到大表所在的各个节点，形成一个内存hash表，然后流式读出大表的数据进行hash join,如果当小表过滤后无法放入内存的话，将报错内存超限
+
 - **shuffle(parititioned) join**
   - 如果broadcast join时内存超限的话，将大小表按照join的key进行hash,然后进行分布式join,这个对内存的消耗将会分摊到集群的所有计算节点上
+
 - **colocate join原理与实践**
+
+  - WHAT
+
+    - Colocate/Local Join就是指多个节点Join时没有数据移动和网络传输，每个节点只在本地进行Join，能够本地进行Join的前提是相同Join Key的数据分布在相同的节点。
+
   - 优点：由于相同的Join key的数据分布在相同的节点,因此查询时没有数据的网络传输，性能更高，相比shuffle join拥有更高的并发粒度，可以显著提升Join性能
+
   - 核心思路:
     - 数据导入时保证数据的本地性;
       - 计算Distributed Key的hash值,并对bucket num取模,保证相同Distributed Key的数据映射到相同的bucket seq
+
+        ![](../images/Bucket Seq.png)
+
+        ![](../images/数据本地性.png)
+
       - 将同一个Colocate Group下所有相同Bucket Seq的bucket映射到相同的BE
     - 查询调度时保证数据本地性;
     - 数据balance后保证数据本地性

@@ -104,7 +104,7 @@ val textRDD = textfile.map(line => line.split(" ")(0) + "_" + line.split(" ")(1)
 6. hive有个定时任务平时正常，没有啥问题，正常一般大概执行1个小时左右，但是今天突然报错了，报错代码：：running beyond physical memory limits. Current usage: 2.0 GB of 2 GB physical memory used; 3.9 GB of 4.2 GB virtual memory used. Killing container
 
    分析:container分配2g物理内存已经使用完了,虚拟内存4.2g已经使用了3.9g.
-   
+
    1. 首先可以查看集群中每个container分配到内存的区间,我们是256M~8G.但是**具体每个container实际分配多少内存要看平台资源的负载情况,以及任务的优先级等因素**.通过将每个container的分配内存区间值调大的作用不是很大(**set yarn.scheduler.minimum-allocation-mb**,实际这个值要通过yarn-site.xml文件进行配置,并且需要重启集群才会生效)
    2. 查看知道mapTask和reduceTask可以使用的内存大小为集群设定值,所以如果是因为平台资源紧张造成部分任务因内存不够而失败(之前很多时候可以正常跑成功的任务),这是单方面调大**mapreduce.map.memory.mb和mapreduce.reduce.memory.mb**的值没有任何意义,因为尽管container可以分配的内存是1-8g,但现在因为集群资源紧张可能分配的内存小,那么即使调大map和reduce可使用内存也无济于事.不过平台资源丰富,调大其内存可见效.
    3. 增加虚拟内存的虚拟化比率
@@ -115,3 +115,51 @@ val textRDD = textfile.map(line => line.split(" ")(0) + "_" + line.split(" ")(1)
    6. 优化程序
       1. 设置更多的重试次数,代价是消耗太大
       2. 检查数据倾斜情况,解决数据倾斜问题
+
+7. 腾讯视频的播放流水表play_flow，字段信息如下：
+
+   ```sql
+   date --日期，分区字段
+   uin --账号
+   vid --视频id
+   duration --本次观看时长
+   ftim --播放开始时间
+   ```
+
+   视频信息表video_info，字段信息如下：
+
+   ```Sql
+   vid --视频id
+   type --视频类型 1-电视剧 2-电影 3-综艺
+   ```
+
+   提取出最近7天，每天观看综艺都超过1个小时的所有用户
+
+   ```sql
+   with mid_tb as (
+   select uin, date, sum(duration) as duration_sum
+   from
+   (
+   select uin, vid, date, duration
+   from play_flow
+   where date >= ${date - 7} 
+    and date <= ${date - 1}
+   ) user
+   join 
+   (
+    select vid 
+    from video_info
+    where date = ${date - 1}
+     and type = 3
+   ) info
+   on user.vid = info.vid)
+   group by uin, date
+   having sum(duration) > 3600
+
+   select uin, collect_set(date) as set
+   from mid_tb
+   group by uin
+   having size(set) = 7
+   ```
+
+   ​
