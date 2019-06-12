@@ -94,7 +94,7 @@
   - map是作用于RDD中的每一个元素(RDD = 100 partition partition = n个元素)
   - mapPartitions是作用于partition上,但是如果partition中元素特别多的时候,可能会出现资源不足的情况,可以调整partition数目,改变每个partition中元素的数量
 - Foreach VS ForeachPartition   action
-  - 类似与map VS mapPartitions,写数据库一定要使用 **Partition算子
+  - 类似与map VS mapPartitions,写数据库一定要使用 **Partition算子**
 - groupByKey VS reduceByKey
   - groupByKey shuffle传输的数据量大于reduceByKey
   - groupByKey:所有的数据都经过了shuffle

@@ -127,11 +127,13 @@ Mesa是一个分布式、多副本的、高可用的数据处理、存储和查�
 #### Doris中的join
 
 - **broadcast join**
-  - 系统默认实现：将小表进行条件过滤之后，将其广播到大表所在的各个节点，形成一个内存hash表，然后流式读出大表的数据进行hash join,如果当小表过滤后无法放入内存的话，将报错内存超限
-
+  
+- 系统默认实现：将小表进行条件过滤之后，将其广播到大表所在的各个节点，形成一个内存hash表，然后流式读出大表的数据进行hash join,如果当小表过滤后无法放入内存的话，将报错内存超限
+  
 - **shuffle(parititioned) join**
-  - 如果broadcast join时内存超限的话，将大小表按照join的key进行hash,然后进行分布式join,这个对内存的消耗将会分摊到集群的所有计算节点上
-
+  
+- 如果broadcast join时内存超限的话，将大小表按照join的key进行hash,然后进行分布式join,这个对内存的消耗将会分摊到集群的所有计算节点上
+  
 - **colocate join原理与实践**
 
   - WHAT
@@ -148,7 +150,13 @@ Mesa是一个分布式、多副本的、高可用的数据处理、存储和查�
 
         ![](../images/数据本地性.png)
 
+        ![](../images/colocate join 第一步.png)
+      
       - 将同一个Colocate Group下所有相同Bucket Seq的bucket映射到相同的BE
+      
+        1. Group中所有Table的Bucket Seq和BE节点的映射关系和Parent Table一致
+        2. Parent Table中所有Partition的Bucket Seq和BE节点的映射关系和第一个Partition一致
+        3. Parent Table第一个Partition的Bucket Seq和BE节点的映射关系理由原生的Round Robin算法决定
     - 查询调度时保证数据本地性;
     - 数据balance后保证数据本地性
       - 新增一个daemon线程专门处理colocate table的balance,并让正常的balance线程不处理colocate table的balance

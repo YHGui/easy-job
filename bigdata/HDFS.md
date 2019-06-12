@@ -16,7 +16,7 @@
 这些数据保存在内存中,同时在磁盘保存两个元数据管理文件:fsimage和editlog
 
 - fsimage:是内存命名空间元数据在外存的镜像文件
-- editlog:各种元数据操作的WAL(write-ahead-log)文件,在体现到内存数据变化前首先会将操作记入editlog,以防止数据丢失
+- editlog:各种元数据操作的WAL(write-ahead-log)文件,在体现到内存数据变化前首先会将操作记入editlog中,以防止数据丢失
 
 上述两个文件结合可以构造完整的内存数据
 
@@ -30,21 +30,34 @@ Secondary NameNode并不是NameNode的热备机,而是定期从NameNode拉取fsi
 
 ### 文件写入过程
 
+![HDFS写入过程](../images/hdfs-write-flow.png)
+
 - block：文件分块，默认64M，2.0变为128M，可修改，不建议改：**block块太小，寻址时间占比过高；block块太大，Map任务数太少，作业执行速度变慢**
 - packet：第二大单位，是client向DataNode，或者DataNode的pipeline之间传数据的基本单位，默认为64KB。
 - chunk：最小的单位，client向DataNode，或DataNode的pipeline之间进行数据校验的基本单位，默认512Byte，因为用作校验，故每个chunk需要带有4Byte的校验
-- client端向DataNode传数据的时候，HDFSOutputStream会有一个chunk buff，写满一个chunk后，会计算校验并写入当前的chunk。之后再把带有检验和的chunk写入packet，当一个packet写满后，packet会进入dataQueue队列，其他的DataNode就是从这个dataQueue获取client端上传的数据并存储的。同时一个DataNode成功存储一个packet后会返回一个ack packet，放入ack Queue中。
+- client端向DataNode传数据的时候，HDFSOutputStream会有一个chunk buff，写满一个chunk后，会计算校验并写入当前的chunk。之后再把带有检验和的chunk写入packet，当一个packet写满后，packet会进入dataQueue队列，DataStreamer线程会不断从dataQueue队列中取出packet,发送到复制Pipeline中的第一个DataNode上,并将该packet从dataQueue队列中移到ackQueue对立中.ResponseProcessor线程接收从DataNode发送过来的ack,如果是一个成功的ack,表示复制Pipeline中所有的DataNode都已经接收到这个Packet,ResponseProcessor线程将packet从队列ackQueue中删除.在发送过程中,如果发生错误,所有未完成的packet都会从ackQueue队列中移除掉,然后重新创建一个新的Pipeline,排除掉出错的那些DataNode节点,接着DataStreamer线程继续从dataQueue队列中发送packet。
 
-![HDFS写入过程](../images/hdfs-write-flow.png)
+![](../images/DFSOutputStream结果及原理.png)
 
 1. client发出写请求后，首先检查是否已存在文件，检查权限。如果通过检查，将操作写入editlog
 2. Client调用DistributeFileSystem对象的create方法,创建一个文件输出流(FSDataOutputStream)对象;
 3. 通过DistributeFileSystem对象与集群的NameNode进行一次RPC远程调用,在HDFS的Namespace中创建一个文件条目(Entry),此时该条目没有任何的Block,NameNode会返回该数据每个块需要拷贝的DataNode地址信息;
-4. 通过FSDataOutputStream对象,开始向最近的DataNode写入数据,数据首先被写入FSDataOutputStream对象内部的数据队列中,数据队列由DataStreamer使用,它通过选择合适的DataNode列表来存储副本,从而要求NameNode分配新的block;
-5. DataStreamer将数据包以流式传输的方式传输到分配的第一个DataNode中,该数据将数据包存储到第一个DataNode中并将其转发到第二个DataNode中,接着第二个DataNode节点会将数据包转发到第三个DataNode节点（client每向第一个DataNode写入一个packet，这个packet便会直接在pipeline里传给第二个，第三个DataNode）;
-6. DataNode确认数据传输完成,最后一个DataNode通知clietn数据写入成功;
-7. 完成想文件写入数据,Clietn在文件输出流(FSDataOutputStream)对象上调用close方法,完成文件写入;
-8. 调用DistributeFileSystem对象的complete方法,通知NameNode文件写入成功,NameNode会将相关结果记录到editlog.
+4. 通过FSDataOutputStream对象,开始向最近的DataNode写入数据,数据首先被写入FSDataOutputStream对象内部的Buffer中,然后被分割成一个个Packet数据包
+5. 以Packet最小单位,基于Socket连接发送到俺特定算法选择的HDFS集群中一组DataNode(正常3个,可能大于等于1)中的一个节点上,在这组DataNode组成的Pipeline上一次传输Packet;
+6. DataStreamer将Packet以流式传输的方式传输到分配的第一个DataNode中,该数据将数据包存储到第一个DataNode中并将其转发到第二个DataNode中,接着第二个DataNode节点会将数据包转发到第三个DataNode节点（client每向第一个DataNode写入一个packet，这个packet便会直接在pipeline里传给第二个，第三个DataNode）;
+7. 这组DataNode组成的Pipeline反方向上,发送ack,最终由Pipeline中的第一个DataNode节点将Pipeline ack发送给Client,通知clietn数据写入成功;
+8. 完成想文件写入数据,Clietn在文件输出流(FSDataOutputStream)对象上调用close方法,完成文件写入;
+9. 调用DistributeFileSystem对象的complete方法,通知NameNode文件写入成功,NameNode会将相关结果记录到editlog.
+
+#### DataNode端服务组件
+
+数据最终会发送到DataNode节点上，在一个DataNode上，数据在各个组件之间流动，流程如下图所示：
+
+![](../images/DataNode端服务组件.png)
+
+DataNode服务中创建一个后台线程DataXceiverServer，它是一个SocketServer，用来接收来自Client（或者DataNode Pipeline中的非最后一个DataNode节点）的写数据请求，然后在DataXceiverServer中将连接过来的Socket直接派发给一个独立的后台线程DataXceiver进行处理。所以，Client写数据时连接一个DataNode Pipeline的结构，实际流程如图所示：
+
+![](../images/DataNode Pipeline流程图.png)
 
 ### 文件读取过程
 
@@ -69,11 +82,11 @@ HDFS 1.0的架构问题:
 
 HA实现组件:
 
-1. Active NameNode和Standby NameNode:两台NameNode形成互备,只有主NameNode才能对外提供读写服务;
-2. ZKFailoverController(主备切换控制器,FC):作为独立进程运行,对NameNode的主备切换进行总体控制,它能及时检测到NameNode的健康状况,在主NameNode故障时借助Zookeeper实现自动的主备选举和切换
-3. Zookeeper集群:为主备切换控制器提供主备选举支持
-4. 共享存储系统:共享存储系统是实现NameNode的高可用最为关键的部分,共享存储系统保存了NameNode在运行过程中所产生的HDFS的元数据.主NameNode和备NameNode通过共享存储系统实现元数据同步.在进行主备切换的时候,新的主NameNode在**确认元数据完全同步之后才能继续对外提供服务**.
-5. DataNode节点:因为NameNode和备NameNode需要共享HDFS的数据块与DataNode之间的映射关系,为了使故障切换能够快速进行,DataNode会同时向主NameNode和备NameNode上报数据块的位置信息.
+1. **Active NameNode和Standby NameNode**:两台NameNode形成互备,只有主NameNode才能对外提供读写服务;
+2. **ZKFailoverController(主备切换控制器,FC)**:作为独立进程运行,对NameNode的主备切换进行总体控制,它能及时检测到NameNode的健康状况,在主NameNode故障时借助Zookeeper实现自动的主备选举和切换,当然 NameNode 目前也支持不依赖于 Zookeeper 的手动主备切换
+3. **Zookeeper集群**:为主备切换控制器提供主备选举支持
+4. **共享存储系统**:共享存储系统是实现NameNode的高可用最为关键的部分,共享存储系统保存了NameNode在运行过程中所产生的HDFS的元数据.主NameNode和备NameNode通过共享存储系统实现元数据同步.在进行主备切换的时候,新的主NameNode在**确认元数据完全同步之后才能继续对外提供服务**.
+5. **DataNode节点**:因为NameNode和备NameNode需要共享HDFS的数据块与DataNode之间的映射关系,为了使故障切换能够快速进行,DataNode会同时向主NameNode和备NameNode上报数据块的位置信息.
 
 ### FailoverController
 
@@ -81,6 +94,17 @@ HA实现组件:
 
 1. HealthMonitor：主要负责检测 NameNode 的健康状态，如果检测到 NameNode 的状态发生变化，会回调 ZKFailoverController 的相应方法进行自动的主备选举；
 2. ActiveStandbyElector：主要负责完成自动的主备选举，内部封装了 Zookeeper 的处理逻辑，一旦 Zookeeper 主备选举完成，会回调 ZKFailoverController 的相应方法来进行 NameNode 的主备状态切换。
+
+NameNode 实现主备切换的流程:
+
+1. HealthMonitor 初始化完成之后会启动内部的线程来定时调用对应 NameNode 的 HAServiceProtocol RPC 接口的方法，对 NameNode 的健康状态进行检测;
+2. HealthMonitor 如果检测到 NameNode 的健康状态发生变化，会回调 ZKFailoverController 注册的相应方法进行处理;
+3. 如果 ZKFailoverController 判断需要进行主备切换，会首先使用 ActiveStandbyElector 来进行自动的主备选举;
+4. ActiveStandbyElector 与 Zookeeper 进行交互完成自动的主备选举;
+5. ActiveStandbyElector 在主备选举完成后，会回调 ZKFailoverController 的相应方法来通知当前的 NameNode 成为主 NameNode 或备 NameNode;
+6. ZKFailoverController 调用对应 NameNode 的 HAServiceProtocol RPC 接口的方法将 NameNode 转换为 Active 状态或 Standby 状态
+
+![](../images/NameNode主备切换流程.png)
 
 ### 自动触发主备选举
 
@@ -116,7 +140,7 @@ Hadoop目前提供两种隔离措施,通常选择第一种:
 1. sshfence:通过SSH登录到目标机器上,执行命令fuser将对应的进程杀死;
 2. shellfence:执行一个用户自定义的shell脚本将对应的进程隔离.
 
-只有在成功执行完成fencing之后,选主成功的ActiveStandbyElector才会回调ZKFailoverController的becomeActive方法讲对应的NameNode转换为Active状态,开始对外提供服务.
+只有在成功执行完成fencing之后,选主成功的ActiveStandbyElector才会回调ZKFailoverController的becomeActive方法将对应的NameNode转换为Active状态,开始对外提供服务.
 
 ### 第三方存储(共享存储)
 
