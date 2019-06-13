@@ -305,6 +305,39 @@
 
 ### Java
 
+#### 设计模式
+
+1. 单例
+
+   ```java
+   public class Singleton {
+       private static Singleto instance = null;
+       private Singleton(){}
+       public static synchronized Singleton newInstance() {
+           if (null == instance) {
+               instance = new Singleton();
+           }
+           return instance;
+       }
+   }
+   
+   //double checked
+   public class Singleton {
+       private static Singleto instance = null;
+       private Singleton(){}
+       public static Singleton newInstance() {
+           if (null == instance) {
+               synchronized(Singleton.class) {
+                   if (null == instance) {
+                		instance = new Singleton();       
+                   }
+               }
+           }
+           return instance;
+       }
+   }
+   ```
+
 #### 并发
 
 1. synchronized关键字的本质, 作用是什么?
