@@ -14,7 +14,7 @@
 
 2. 图解
 
-   ![Spark运行流程图解](../images/Spark运行流程图解.png)
+   ![Spark运行流程图解](../../images/Spark运行流程图解.png)
 
 3. Spark运行架构特点
 
@@ -24,6 +24,10 @@
    4. Task采用了数据本地性和推测执行的优化机制
 
 4. #### DAGScheduler
+
+   Job=多个stage,Stage=多个同种task,Task分为ShuffleMapTask和ResultTask,Dependency分为ShuffleDependency和NarrowDependecy
+
+   面向stage的切分,切分依据为宽依赖维护waiting jobs和active jobs,维护waiting stage,active stages和failed stages,以及与jobs的映射关系
 
    1. 接收提交Job的主入口，`submitJob(rdd, ...)`或`runJob(rdd, ...)`。在`SparkContext`里会调用这两个方法
       - 生成一个Stage并提交，接着判断Stage是否有父Stage未完成，若有，提交并等待父Stage，以此类推。结果是：DAGScheduler里增加了一些waiting stage和一个running stage
@@ -40,6 +44,14 @@
    3. 其他与job相关的操作还包括：cancel job， cancel stage, resubmit failed stage等
 
 5. TaskScheduler
+
+   维护task和executor对应关系,executor和物理资源对应关系,在排队的task和正在跑的task
+
+   内部维护一个任务队列,根据FIFO或Fair策略,调度任务
+
+   TaskScheduler本身是个接口,Spark里只实现了一个TaskSchedulerImpl,理论上任务调度可以定制
+
+   主要功能:
 
    1. `submitTasks(taskSet)`，接收`DAGScheduler`提交来的tasks 
       - 为tasks创建一个`TaskSetManager`，添加到任务队列里。`TaskSetManager`跟踪每个task的执行状况，维护了task的许多具体信息
@@ -63,9 +75,45 @@
       1. 对于success task，如果taskResult里的数据是直接结果数据，直接把data反序列出来得到结果；如果不是，会调用`blockManager.getRemoteBytes(blockId)`从远程获取。如果远程取回的数据是空的，那么会调用`TaskScheduler.handleFailedTask`，告诉它这个任务是完成了的但是数据是丢失的。否则，取到数据之后会通知`BlockManagerMaster`移除这个block信息，调用`TaskScheduler.handleSuccessfulTask`，告诉它这个任务是执行成功的，并且把result data传回去。
       2. 对于failed task，从data里解析出fail的理由，调用`TaskScheduler.handleFailedTask`，告诉它这个任务失败了，理由是什么。
 
-6. Executor
+6. SchedulerBackend
 
-   1. Executor是spark里的进程模型，可以套用到不同的资源管理系统上，与`SchedulerBackend`配合使用。内部有个线程池，running tasks map，以及actor，接收上面提到的由`SchedulerBackend`发来的事件。
+   在TaskScheduler层,用于对接不同的资源管理系统,SchedulerBackend是个接口,需要实现的主要方法如下:
+
+   ```scala
+   def start(): Unit
+   def stop(): Unit
+   def reviveOffers(): Unit // 重要方法：SchedulerBackend把自己手头上的可用资源交给TaskScheduler，TaskScheduler根据调度策略分配给排队的任务吗，返回一批可执行的任务描述，SchedulerBackend负责launchTask，即最终把task塞到了executor模型上，executor里的线程池会执行task的run()
+   def killTask(taskId: Long, executorId: String, interruptThread: Boolean): Unit =
+       throw new UnsupportedOperationException
+   ```
+
+   粗粒度:进程常驻的模式,典型代码是standalone模式,mesos粗粒度模式,yarn
+
+   细粒度:mesos细粒度模式
+
+   这里讨论粗粒度模式,更好理解:CoarseGrainedSchedulerBackend
+
+   维护executor相关信息(包括executor的地址、通信端口、host、总核数，剩余核数)，手头上executor有多少被注册使用了，有多少剩余，总共还有多少核是空的等等
+
+   主要职能
+
+   1. Driver端主要通过actor监听和处理下面这些事件:
+      1. `RegisterExecutor(executorId, hostPort, cores, logUrls)`。这是executor添加的来源，通常worker拉起、重启会触发executor的注册。`CoarseGrainedSchedulerBackend`把这些executor维护起来，更新内部的资源信息，比如总核数增加。最后调用一次`makeOffer()`，即把手头资源丢给`TaskScheduler`去分配一次，返回任务描述回来，把任务launch起来。这个`makeOffer()`的调用会出现在*任何与资源变化相关的事件*中，下面会看到。
+      2. `StatusUpdate(executorId, taskId, state, data)`。task的状态回调。首先，调用`TaskScheduler.statusUpdate`上报上去。然后，判断这个task是否执行结束了，结束了的话把executor上的freeCore加回去，调用一次`makeOffer()`。
+      3. `ReviveOffers`。这个事件就是别人直接向`SchedulerBackend`请求资源，直接调用`makeOffer()`。
+      4. `KillTask(taskId, executorId, interruptThread)`。这个killTask的事件，会被发送给executor的actor，executor会处理`KillTask`这个事件。
+      5. `StopExecutors`。通知每一个executor，处理`StopExecutor`事件。
+      6. `RemoveExecutor(executorId, reason)`。从维护信息中，那这堆executor涉及的资源数减掉，然后调用`TaskScheduler.executorLost()`方法，通知上层我这边有一批资源不能用了，你处理下吧。`TaskScheduler`会继续把`executorLost`的事件上报给`DAGScheduler`，原因是`DAGScheduler`关心shuffle任务的output location。`DAGScheduler`会告诉`BlockManager`这个executor不可用了，移走它，然后把所有的stage的shuffleOutput信息都遍历一遍，移走这个executor，并且把更新后的shuffleOutput信息注册到`MapOutputTracker`上，最后清理下本地的`CachedLocations`Map。
+   2. `reviveOffers()`方法的实现。直接调用了`makeOffers()`方法，得到一批可执行的任务描述，调用`launchTasks`。
+   3. `launchTasks(tasks: Seq[Seq[TaskDescription]])`方法。 
+      - 遍历每个task描述，序列化成二进制，然后发送给每个对应的executor这个任务信息 
+      - 如果这个二进制信息太大，超过了9.2M(默认的akkaFrameSize 10M 减去 默认 为akka留空的200K)，会出错，abort整个taskSet，并打印提醒增大akka frame size
+      - 如果二进制数据大小可接受，发送给executor的actor，处理`LaunchTask(serializedTask)`事件。
+
+7. Executor
+
+   Executor是spark里的进程模型，可以套用到不同的资源管理系统上，与`SchedulerBackend`配合使用。内部有个线程池，running tasks map，以及actor，接收上面提到的由`SchedulerBackend`发来的事件。
+
    2. **事件处理**
       1. `launchTask`。根据task描述，生成一个`TaskRunner`线程，丢尽running tasks map里，用线程池执行这个`TaskRunner`
       2. `killTask`。从running tasks map里拿出线程对象，调它的kill方法。
@@ -94,9 +142,13 @@
 
 3. 图解
 
-   !['Spark on Standalone运行过程](../images/Spark on Standalone运行过程.png)
+   ![Spark on Standalone运行过程](../../images/Spark on Standalone运行过程.png)
 
 #### Spark on YARN
+
+YARN是一种统一资源管理机制，在其上面可以运行多套计算框架。目前的大数据技术世界，大多数公司除了使用Spark来进行数据计算，由于历史原因或者单方面业务处理的性能考虑而使用着其他的计算框架，比如MapReduce、Storm等计算框架。Spark基于此种情况开发了Spark on YARN的运行模式，由于借助了YARN良好的弹性资源管理机制，不仅部署Application更加方便，而且用户在YARN集群中运行的服务和Application的资源也完全隔离，更具实践应用价值的是YARN可以通过队列的方式，管理同时运行在集群中的多个服务。
+
+Spark on YARN模式根据Driver在集群中的位置分为两种模式：一种是YARN-Client模式，另一种是YARN-Cluster（或称为YARN-Standalone模式）。
 
 1. YARN-Client
 
@@ -104,16 +156,16 @@
 
    - 运行过程
 
-     - Spark Yarn Client向YARN的ResourceManager申请启动Application Master。同时在SparkContent初始化中将创建DAGScheduler和TASKScheduler等，由于我们选择的是Yarn-Client模式，程序会选择YarnClientClusterScheduler和YarnClientSchedulerBackend
+     - Spark Yarn Client向YARN的ResourceManager申请启动Application Master。同时在SparkContent初始化中将创建DAGScheduler和TaskScheduler等，由于我们选择的是Yarn-Client模式，程序会选择YarnClientClusterScheduler和YarnClientSchedulerBackend
      - ResourceManager收到请求后，在集群中选择一个NodeManager，为该应用程序分配第一个Container，要求它在这个Container中启动应用程序的ApplicationMaster，与YARN-Cluster区别的是在该ApplicationMaster不运行SparkContext，只与SparkContext进行联系进行资源的分派；
      - Client中的SparkContext初始化完毕后，与ApplicationMaster建立通讯，向ResourceManager注册，根据任务信息向ResourceManager申请资源（Container）；
-     - 一旦ApplicationMaster申请到资源（也就是Container）后，便与对应的NodeManager通信，要求它在获得的Container中启动启动CoarseGrainedExecutorBackend，CoarseGrainedExecutorBackend启动后会向Client中的SparkContext注册并申请Task；
+     - 一旦ApplicationMaster申请到资源（也就是Container）后，便与对应的NodeManager通信，要求它在获得的Container中启动CoarseGrainedExecutorBackend，CoarseGrainedExecutorBackend启动后会向Client中的SparkContext注册并申请Task；
      - Client中的SparkContext分配Task给CoarseGrainedExecutorBackend执行，CoarseGrainedExecutorBackend运行Task并向Driver汇报运行的状态和进度，以让Client随时掌握各个任务的运行状态，从而可以在任务失败时重新启动任务；
      - 应用程序运行完成后，Client的SparkContext向ResourceManager申请注销并关闭自己。
 
    - 图解
 
-     ![Spark on YARN Client](../images/Spark on YARN Client.png)
+     ![Spark on YARN Client](../../images/Spark on YARN Client.png)
 
 2. YARN-Cluster
 
@@ -121,7 +173,7 @@
 
    - 运行过程
 
-     - park Yarn Client向YARN中提交应用程序，包括ApplicationMaster程序、启动ApplicationMaster的命令、需要在Executor中运行的程序等；
+     - Spark Yarn Client向YARN中提交应用程序，包括ApplicationMaster程序、启动ApplicationMaster的命令、需要在Executor中运行的程序等；
      - ResourceManager收到请求后，在集群中选择一个NodeManager，为该应用程序分配第一个Container，要求它在这个Container中启动应用程序的ApplicationMaster，其中ApplicationMaster进行SparkContext等的初始化；
      - ApplicationMaster向ResourceManager注册，这样用户可以直接通过ResourceManager查看应用程序的运行状态，然后它将采用轮询的方式通过RPC协议为各个任务申请资源，并监控它们的运行状态直到运行结束；
      - 一旦ApplicationMaster申请到资源（也就是Container）后，便与对应的NodeManager通信，要求它在获得的Container中启动启动CoarseGrainedExecutorBackend，CoarseGrainedExecutorBackend启动后会向ApplicationMaster中的SparkContext注册并申请Task。这一点和Standalone模式一样，只不过SparkContext在Spark Application中初始化时，使用CoarseGrainedSchedulerBackend配合YarnClusterScheduler进行任务的调度，其中YarnClusterScheduler只是对TaskSchedulerImpl的一个简单包装，增加了对Executor的等待逻辑等；
@@ -130,7 +182,7 @@
 
    - 图解
 
-     ![Spark on YARN Cluster](../images/Spark on YARN Cluster.png)
+     ![Spark on YARN Cluster](../../images/Spark on YARN Cluster.png)
 
 3. YARN-Client和YARN-Cluster区别
 
@@ -138,11 +190,11 @@
 
    1. YARN-Cluster模式下，Driver运行在AM(Application Master)中，它负责向YARN申请资源，并监督作业的运行状况。当用户提交了作业之后，就可以关掉Client，作业会继续在YARN上运行，因而YARN-Cluster模式不适合运行交互类型的作业；
 
-      ![YARN Cluster](../images/YARN Cluster Mode.png)
+      ![YARN Cluster](../../images/YARN Cluster Mode.png)
 
    2. YARN-Client模式下，Application Master仅仅向YARN请求Executor，Client会和请求的Container通信来调度他们工作，也就是说Client不能离开。
 
-      ![YARN Client](../images/YARN Client Mode.png)
+      ![YARN Client](../../images/YARN Client Mode.png)
 
 ## Spark 优化实践
 
@@ -206,43 +258,29 @@ spark-shell --cluster zjyprc-hadoop-spark2.1 --deploy-mode client --master yarn 
 - 注意数据倾斜问题
 - 尽量使用Spark Sql解决问题,很多人肉优化都不需要操心
 
-## Chapter 1 Introduction to High Performance Spark
+## 对 spark 中 DAGScheduler 阶段划分的一次探索
 
-### What is Spark and Why performance matters
+- Narrow Dependency指的是 child RDD只依赖于parent RDD(s)固定数量的partition。
+- Wide Dependency指的是child RDD的每一个partition都依赖于parent RDD(s)所有partition。
 
-### What you can expect to get from this book
+下文中 窄依赖 就是指 Narrow Dependency， 宽依赖就是指 Wide Dependency，  宽依赖也称为 shuffle Dependency， 下文图中标识 S 打头，例如 S_X。
 
-### Spark Version
+根据宽依赖和窄依赖， 整个job，会划分为不同的stage, 像是用篱笆隔开了一样， 如果中间有宽依赖，就用刀切一刀， 前后划分为两个 stage。
 
-### Why Scala
+stage 分为两种， ResultStage 和 ShuffleMapStage， spark job 中产生结果最后一个阶段生成的stage 是ResultStage ， 中间阶段生成的stage 是 ShuffleMapStage
 
-### To be a Spark expert you have to learn a little scala anyway
+属于 ResultStage 的Task都是 ResultTask ， 属于 ShuffleMapStage 的Task都是 ShuffleMapTask
 
-### The Spark scala API is easier to use than Java API
+### 依赖链生成过程
 
-### Scala is more performant than Python
+spark 中 DAGScheduler 进行阶段划分主要使用以下几个函数，  在调用过程中使用了递归的思想。函数调用关系如下：
 
-### Why not Scala
+![](../../images/依赖链生成过程.png)
 
-### Learning Scala
+- creatResultStage  创建一个 ResultStage,  整个调用的起始点， 会在 finalRDD 上调用 creatResultStage,  加入我们的依赖链条是:
 
-## How Spark Works
+  A <------------s---------,
+                          		   \
+  B <--s-- C <--s-- D <--n---`-- E
 
-本章主要介绍Spark并行计算模型，Spark调度器和执行引擎
-
-### How Spark Fits into the Big Data Ecosystem
-
-Apache Spark是一个能够提供一般化并行处理数据方法的开源框架，Spark中同样的高级函数可以在不同结构、大小的数据上完成不同数据处理任务。就其本身而言，Spark并不提供数据存储解决方案，它仅仅在Spark应用处理期间基于Spark JVMs进行计算任务。Spark可以仅仅运行在单机环境下，只有一个JVM（也被称为本地模式）。更多情况下，Spark和分布式存储系统（比如HDFS，Cassandra，S3）进行协作，一同协作的还有cluster manager，存储Spark处理后的数据，cluster manager还负责在整个集群分发Spark分布式应用。目前包含三种cluster manager：Standalone cluster manager，Apache Mesos，Hadoop YARN，其中Standalone cluster manager包含在Spark中，使用该cluster manager需要在集群的每个节点上安装Spark。
-
-### Spark Components
-
-Spark支持高级查询语言处理数据。
-
-1. Spark Core：数据处理框架，API支持Scala，Java，Python，R
-2. RDD：Resilient Distributed DataSets（弹性分布式数据集），lazily evaluated（懒惰计算），statically typed，distributed collections，拥有丰富的“粗粒度”transformation方法，同样拥有和分布式好存储系统进行读写操作的方法
-3. Spark SQL
-4. Spark MLib
-5. Spark ML
-6. Spark Streaming
-7. GraphX
-
+  这样的，就会在 E 这个 RDD 上调用 creatResultStage， 会先创建所有父亲stage， 调用 getOrCreateParentStages， 返回 List[stage]作为父 stage后创建自己 的 stage 作为 ResultStage。
