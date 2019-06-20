@@ -507,3 +507,12 @@ class Key implements Comparable<Key> {
 3. HashMap是线程不安全的，不要在并发的环境中同时操作HashMap，建议使用ConcurrentHashMap。
 4. JDK1.8引入红黑树大程度优化了HashMap的性能。
 5. 还没升级JDK1.8的，现在开始升级吧。HashMap的性能提升仅仅是JDK1.8的冰山一角。
+
+### ConcurrentHashMap
+
+在 ConcurrentHashMap 中,不允许用 null 作为键和值。ConcurrentHashMap 使用分段锁技术,将数据分成一段一段的存储,然后给每一段数据配一把锁,当一个线程占用锁访问其中一个段数据的时候,其他段的数据也能被其他线程访问,能够实现真正的并发访问。读操作大部分时候都不需要用到锁。只有在 size 等操作时才需要锁住整个 hash 表。
+它把区间按照并发级别(concurrentLevel),分成了若干个 segment。默认情况下内部按并发级别为 16 来创建。对于每个 segment 的容量,默认情况也是16。当然并发级别(concurrentLevel)和每个段(segment)的初始容量都是可以通过构造函数设定的。ConcurrentHashMap 使用 segment 来分段和管理锁,)segment 继 承 自 ReentrantLock , 因 此 ConcurrentHashMap 使 用ReentrantLock 来保证线程安全。创建好默认的 ConcurrentHashMap 之后,它的结构大致如下图:
+
+![](../images/ConcurrentHashMap结构图.png)
+
+![](/home/guiyonghui/easy-job/images/ConcurrentHashMap结构图2.png)
